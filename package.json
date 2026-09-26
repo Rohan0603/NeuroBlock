@@ -1,0 +1,35 @@
+{
+  "name": "voxelcortex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test --import tsx test/contracts.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev:viewer": "node --env-file-if-exists=.env --import tsx src/dev/offline_viewer.ts",
+    "goal": "node --env-file-if-exists=.env --import tsx scripts/goal.ts",
+    "diagnose:jev": "node --env-file-if-exists=.env --import tsx scripts/check-jev.ts",
+    "diagnose:opencode": "node --env-file-if-exists=.env --import tsx scripts/check-opencode.ts",
+    "probe:opencode-free": "node --env-file-if-exists=.env --import tsx scripts/probe-opencode-free.ts"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.33",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "ajv": "^8.17.1",
+    "canvas": "^3.2.3",
+    "mineflayer": "^4.27.0",
+    "prismarine-viewer": "^1.33.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "canvas@3.2.3": true
+  }
+}

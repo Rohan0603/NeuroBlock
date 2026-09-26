@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.env
+server-1.21.11/
+*.jar
