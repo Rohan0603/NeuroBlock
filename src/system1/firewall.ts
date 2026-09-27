@@ -9,6 +9,7 @@ export const IntentSchema = Type.Object({
     Type.Literal('mine'),
     Type.Literal('eat'),
     Type.Literal('craft'),
+    Type.Literal('place'),
     Type.Literal('idle'),
   ]),
   target: Type.Optional(Type.String()),

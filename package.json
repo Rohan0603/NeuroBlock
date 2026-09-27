@@ -14,7 +14,8 @@
     "goal": "node --env-file-if-exists=.env --import tsx scripts/goal.ts",
     "diagnose:jev": "node --env-file-if-exists=.env --import tsx scripts/check-jev.ts",
     "diagnose:opencode": "node --env-file-if-exists=.env --import tsx scripts/check-opencode.ts",
-    "probe:opencode-free": "node --env-file-if-exists=.env --import tsx scripts/probe-opencode-free.ts"
+    "probe:opencode-free": "node --env-file-if-exists=.env --import tsx scripts/probe-opencode-free.ts",
+    "audit:20hz": "node --import tsx scripts/audit-20hz.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.33",

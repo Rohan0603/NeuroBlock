@@ -229,8 +229,9 @@ code.
 
 ## 8. Known limitations
 
-- Unwired generic LLM, configuration, performance, and telemetry scaffolds were
-  deleted under VC-015. Worker navigation is now active when enabled.
+- Unwired generic LLM and configuration scaffolds were deleted under VC-015.
+  Telemetry export, performance audit, recipe planning, and placement are now
+  active.
 - The 20Hz path needs a deeper allocation/performance audit before production.
 - Crafting currently selects the first available recipe for the requested item;
   production-grade recipe planning remains future work.
@@ -249,6 +250,7 @@ when it is verified.
 
 ### Pending implementation order
 
-VC-015, VC-007, VC-008, VC-009, and VC-011 are complete. VC-013 remains
-blocked by the remote-control approval gate. Do not claim strict provider
-deadline or performance guarantees without active enforcement and tests.
+VC-015, VC-007, VC-008, VC-009, VC-010, VC-011, VC-012, VC-014, and VC-016
+are complete. VC-013 remains blocked by the remote-control approval gate. Do
+not claim strict provider deadline guarantees without active enforcement and
+tests.

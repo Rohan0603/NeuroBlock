@@ -1,5 +1,6 @@
 export * from './core/types.js';
 export * from './core/goal_store.js';
+export * from './core/telemetry.js';
 export * from './system0/brainstem_tick.js';
 export * from './system0/execution_kernel.js';
 export * from './system0/ring_buffer.js';

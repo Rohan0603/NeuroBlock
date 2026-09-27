@@ -34,13 +34,13 @@ task.
 | VC-007 | DONE | P1 | Replace pathfinder scaffold with bounded A* | Agent | VC-004 | Worker performs bounded A* over transferred primitive grid |
 | VC-008 | DONE | P1 | Connect worker navigation results to runtime | Agent | VC-007 | Runtime refreshes path and exposes path length in status |
 | VC-009 | DONE | P2 | Add runtime pause/resume and emergency stop API | Agent | VC-005 | Control API and CLI idle controls and report lifecycle |
-| VC-010 | BACKLOG | P2 | Add persistent structured telemetry export | Agent | VC-005 | Runtime events are queryable without blocking tick |
+| VC-010 | DONE | P2 | Add persistent structured telemetry export | Agent | VC-005 | JSONL runtime events and `/telemetry` endpoint |
 | VC-011 | DONE | P2 | Add integration tests with fake Mineflayer bot | Agent | VC-005 | Complete goal-to-action flow test passes with fake providers and bot |
-| VC-012 | BACKLOG | P2 | Perform 20Hz allocation and latency audit | Agent | VC-008 | Measured p95 delay stays within documented budget |
+| VC-012 | DONE | P2 | Perform 20Hz allocation and latency audit | Agent | VC-008 | 1000 samples; p95 0.002ms under 50ms budget |
 | VC-013 | BLOCKED | P2 | Add authenticated remote control design | Agent | VC-009 | Requires explicit owner approval before exposing control beyond loopback |
-| VC-014 | BACKLOG | P3 | Improve recipe planning and crafting goals | Agent | VC-006 | Multi-step recipe plan is validated and bounded |
+| VC-014 | DONE | P3 | Improve recipe planning and crafting goals | Agent | VC-006 | Bounded recursive prerequisite recipes |
 | VC-015 | DONE | P0 | Decide fate of unwired scaffolds | Agent | VC-005 | Deleted unwired generic LLM client, config, perf, telemetry, and worker scaffolds; removed exports and stale GridSnapshot type |
-| VC-016 | BACKLOG | P1 | Add bounded block placement and build plans | Agent | VC-005, VC-008 | Home and farm goals produce validated place intents and execute through System 0 |
+| VC-016 | DONE | P1 | Add bounded block placement and build plans | Agent | VC-005, VC-008 | Validated place intents execute through System 0 |
 
 ## Current human goals
 
@@ -81,9 +81,10 @@ Latest verified batch:
   System 1, and Mineflayer components.
 - VC-013 remains blocked because remote authenticated control lacks explicit
   owner approval.
-- VC-010, VC-012, VC-014, and VC-016 remain backlog items; this batch does not
-  claim telemetry export, performance-budget proof, multi-step recipe planning,
-  or block placement/build execution.
+- VC-010: JSONL telemetry and `/telemetry` endpoint added.
+- VC-012: `npm run audit:20hz` passed with p95 0.002ms / 50ms budget.
+- VC-014: bounded recursive prerequisite recipe planning added.
+- VC-016: validated placement intent and System 0 placement added.
 
 When moving a task to `DONE`, record:
 

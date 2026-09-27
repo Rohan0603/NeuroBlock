@@ -1,4 +1,4 @@
-export type Action = 'move' | 'attack' | 'mine' | 'eat' | 'craft' | 'idle';
+export type Action = 'move' | 'attack' | 'mine' | 'eat' | 'craft' | 'place' | 'idle';
 
 export interface Intent {
   readonly action: Action;
@@ -40,6 +40,7 @@ export interface AgentStatus {
   readonly lastError?: string;
   readonly decisionCount: number;
   readonly pathLength: number;
+  readonly telemetryEvents: number;
 }
 
 export interface GridSnapshot {

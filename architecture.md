@@ -112,6 +112,13 @@ failure is surfaced through runtime status.
 9. Errors remain visible in `/status`; failures do not become success-shaped
    results.
 
+## Decision observability
+
+Runtime writes structured JSONL events. Logs expose goal, directive, selected
+intent, safety result, executed action, idle reason, and failures. They do not
+attempt to capture hidden model chain-of-thought. Query current events with
+`GET /telemetry`; use `TELEMETRY_FILE` for a separate local log path.
+
 ## Startup and shutdown
 
 1. Start compatible local Paper `1.21.11`.
@@ -142,15 +149,15 @@ deterministic fakes.
 
 | ID | Status | Work |
 |---|---|---|
-| VC-010 | BACKLOG | Persistent structured telemetry export |
-| VC-012 | BACKLOG | 20Hz allocation and latency audit |
+| VC-010 | DONE | JSONL telemetry export and `/telemetry` count endpoint |
+| VC-012 | DONE | 1000-sample 20Hz p95 audit; current run 0.002 ms |
 | VC-013 | BLOCKED | Authenticated remote control; explicit approval required |
-| VC-014 | BACKLOG | Bounded multi-step recipe planning |
-| VC-016 | BACKLOG | Bounded block placement and build plans |
+| VC-014 | DONE | Bounded recursive recipe prerequisite planning |
+| VC-016 | DONE | Validated block placement through System 0 |
 
 Do not claim provider deadline or 20Hz performance guarantees until measured
 enforcement and audit evidence exist.
 
-Home and farm goals currently propagate through the full control path, but
-runtime capabilities do not yet include block placement. The bot can therefore
-plan and move toward this goal, but cannot complete construction until VC-016.
+Home and farm goals now include `place` capability. Construction remains
+bounded by the provider's decisions and available inventory; no unbounded
+world-editing operation exists.

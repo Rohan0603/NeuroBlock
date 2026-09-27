@@ -9,6 +9,7 @@ import { StrategicLoop } from '../system2/strategic_loop.js';
 import { ControlServer } from '../control/control_server.js';
 import { WorkerManager } from '../workers/worker_manager.js';
 import { extractLocalGrid } from '../workers/grid_extractor.js';
+import { Telemetry } from '../core/telemetry.js';
 
 export interface AgentRuntimeOptions {
   readonly controlPort?: number;
@@ -30,6 +31,7 @@ export class AgentRuntime {
   private readonly control: ControlServer;
   private readonly kernel: ExecutionKernel;
   private readonly enableNavigation: boolean;
+  private readonly telemetry = new Telemetry();
   private timer: NodeJS.Timeout | undefined;
   private stateVersion = 0;
   private lastGoalVersion = 0;
@@ -45,7 +47,7 @@ export class AgentRuntime {
   public constructor(private readonly bot: Bot, options: AgentRuntimeOptions = {}) {
     this.kernel = new ExecutionKernel(bot);
     this.enableNavigation = options.enableNavigation !== false;
-    this.brainstem = new BrainstemTick(bot, this.source);
+    this.brainstem = new BrainstemTick(bot, this.source, (type, data) => this.telemetry.record(type, data));
     this.jev = options.jev ?? new JevClient();
     this.strategy = options.strategy ?? new StrategicLoop(async () => {
       const goal = this.goals.current?.text ?? 'Explore the nearby world and improve survival.';
@@ -62,12 +64,14 @@ export class AgentRuntime {
       pause: () => { this.paused = true; this.kernel.execute({ action: 'idle', state_version: this.stateVersion }); },
       resume: () => { if (!this.emergencyStopped) this.paused = false; },
       emergencyStop: () => { this.emergencyStopped = true; this.paused = true; this.kernel.execute({ action: 'idle', state_version: this.stateVersion }); },
+      telemetry: () => this.telemetry.read(),
     });
   }
 
   public async start(): Promise<void> {
     if (this.timer) return;
     this.connected = true;
+    this.telemetry.record('runtime.started');
     await this.control.start();
     this.brainstem.start();
     this.strategy.start();
@@ -98,7 +102,7 @@ export class AgentRuntime {
       position: position ? { x: Math.round(position.x), y: Math.round(position.y), z: Math.round(position.z) } : null,
       inventory,
       nearbyEntities: Object.values(this.bot.entities).filter((entity) => entity !== this.bot.entity).slice(0, 8).map((entity) => entity.name ?? entity.type),
-      capabilities: ['move', 'attack', 'mine', 'eat', 'craft'],
+      capabilities: ['move', 'attack', 'mine', 'eat', 'craft', 'place'],
     });
   }
 
@@ -107,20 +111,24 @@ export class AgentRuntime {
     try {
       if ((this.goals.current?.version ?? 0) !== this.lastGoalVersion) await this.refreshStrategy();
       const directive = this.strategy.latest?.text ?? 'Explore the nearby world and improve survival.';
+      this.telemetry.record('system1.request', { directive });
       const intent = await this.jev.requestIntent(JSON.stringify({
         directive,
         state: this.observe(),
-        capabilities: ['move', 'attack', 'mine', 'eat', 'craft'],
+        capabilities: ['move', 'attack', 'mine', 'eat', 'craft', 'place'],
         role: 'Convert the strategic directive into one immediate validated action.',
-      }), this.stateVersion, ['move', 'attack', 'mine', 'eat', 'craft', 'idle']);
+      }), this.stateVersion, ['move', 'attack', 'mine', 'eat', 'craft', 'place', 'idle']);
       this.source.latest = { intent: intent ?? { action: 'move', state_version: this.stateVersion }, stateVersion: this.stateVersion, requestId: Date.now() };
+      this.telemetry.record('system1.intent', { action: this.source.latest.intent.action, target: this.source.latest.intent.target });
       this.lastAction = this.source.latest.intent.action;
       this.decisionCount += 1;
+      this.telemetry.record('decision', { action: this.lastAction, stateVersion: this.stateVersion });
       this.lastError = undefined;
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : 'Decision cycle failed';
       this.source.latest = undefined;
       this.lastAction = 'idle';
+      this.telemetry.record('decision.failed', { error: this.lastError });
     }
   }
 
@@ -129,6 +137,10 @@ export class AgentRuntime {
   private async refreshStrategy(): Promise<void> {
     await this.strategy.run(this.goals.current?.text);
     this.lastGoalVersion = this.goals.current?.version ?? 0;
+    this.telemetry.record('system2.directive', {
+      goal: this.goals.current?.text,
+      directive: this.strategy.latest?.text,
+    });
   }
 
   private async refreshNavigation(): Promise<void> {
@@ -154,6 +166,7 @@ export class AgentRuntime {
       ...(this.lastError ? { lastError: this.lastError } : {}),
       decisionCount: this.decisionCount,
       pathLength: this.pathLength,
+      telemetryEvents: this.telemetry.size,
     };
   }
 

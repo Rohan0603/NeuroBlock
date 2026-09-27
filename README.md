@@ -70,11 +70,26 @@ npm run goal -- resume
 npm run goal -- emergency-stop
 ```
 
-The equivalent loopback API is `GET /status`, `POST /goal` with
+The equivalent loopback API is `GET /status`, `GET /telemetry`, `POST /goal` with
 `{"goal":"..."}`, `DELETE /goal`, `POST /pause`, `POST /resume`, and
 `POST /emergency-stop` on `http://127.0.0.1:8787`. Status includes lifecycle,
 decision count, and latest runtime error for troubleshooting. The API never
 exposes direct bot actions.
+
+Runtime events append as JSON Lines to `telemetry.jsonl` by default. `GET /telemetry` reads persisted events. Set
+`TELEMETRY_FILE` to choose another local path. Run `npm run audit:20hz` to
+measure brainstem p95 latency against the 50 ms tick budget.
+
+Useful event types:
+
+- `system2.directive`: goal and selected strategic directive.
+- `system1.request`: directive sent for action selection.
+- `system1.intent`: validated action and target.
+- `system0.safety`: safety result and intent freshness.
+- `system0.execution`: executed action or idle reason.
+- `decision.failed`: provider/runtime failure.
+
+Logs record decisions and directives, not hidden provider chain-of-thought.
 
 ## Provider API configuration
 

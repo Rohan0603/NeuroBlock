@@ -8,12 +8,14 @@ import { GoalStore } from '../src/core/goal_store.js';
 import { ControlServer } from '../src/control/control_server.js';
 import { AgentRuntime } from '../src/runtime/agent_runtime.js';
 import { StrategicLoop } from '../src/system2/strategic_loop.js';
+import { ExecutionKernel } from '../src/system0/execution_kernel.js';
 import type { Bot } from 'mineflayer';
 
 test('firewall accepts only the strict intent shape', () => {
   assert.deepEqual(validateLLMIntent({ action: 'move', state_version: 2 }), { action: 'move', state_version: 2 });
   assert.equal(validateLLMIntent({ action: 'move', state_version: 2, extra: true }), null);
   assert.equal(validateLLMIntent({ action: 'fly', state_version: 2 }), null);
+  assert.deepEqual(validateLLMIntent({ action: 'place', state_version: 2, target: '{}' }), { action: 'place', state_version: 2, target: '{}' });
 });
 
 test('circuit breaker opens after three failures and permits a later probe', () => {
@@ -58,13 +60,29 @@ test('goal store replaces and clears human goals', () => {
   assert.throws(() => goals.set(' '));
 });
 
+test('System 0 places a held block from a validated placement target', () => {
+  let placed = false;
+  const bot = {
+    registry: { itemsByName: { oak_planks: { id: 5 } } },
+    heldItem: { type: 5 },
+    blockAt: () => ({ type: 1 }),
+    placeBlock: async () => { placed = true; },
+  } as unknown as Bot;
+  new ExecutionKernel(bot).execute({
+    action: 'place',
+    state_version: 0,
+    target: JSON.stringify({ block: 'oak_planks', reference: { x: 0, y: 64, z: 0 }, face: { x: 0, y: 1, z: 0 } }),
+  });
+  assert.equal(placed, true);
+});
+
 test('control API accepts goals and lifecycle controls, never direct actions', async () => {
   const goals = new GoalStore();
   let paused = false;
   const control = new ControlServer({
     port: 18789,
     goals,
-    status: () => ({ connected: true, paused, emergencyStopped: false, stateVersion: 0, decisionCount: 0, pathLength: 0 }),
+    status: () => ({ connected: true, paused, emergencyStopped: false, stateVersion: 0, decisionCount: 0, pathLength: 0, telemetryEvents: 0 }),
     pause: () => { paused = true; },
     resume: () => { paused = false; },
     emergencyStop: () => { paused = true; },

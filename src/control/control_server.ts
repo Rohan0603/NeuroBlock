@@ -10,6 +10,7 @@ export interface ControlServerOptions {
   readonly pause: () => void;
   readonly resume: () => void;
   readonly emergencyStop: () => void;
+  readonly telemetry?: () => Promise<unknown>;
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -37,6 +38,10 @@ export class ControlServer {
       try {
         if (request.method === 'GET' && request.url === '/status') {
           json(response, 200, this.options.status());
+          return;
+        }
+        if (request.method === 'GET' && request.url === '/telemetry') {
+          json(response, 200, this.options.telemetry ? await this.options.telemetry() : { error: 'Telemetry unavailable' });
           return;
         }
         if (request.method === 'POST' && request.url === '/goal') {
