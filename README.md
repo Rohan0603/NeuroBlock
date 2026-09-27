@@ -149,10 +149,10 @@ jump pulse, and replans with `GoalNear`. After three rescue attempts, runtime
 pauses and `/status` reports the navigation fault. Status also reports
 malformed telemetry records and write failures when observed.
 
-Survival navigation keeps native Pathfinder jump and climb behavior enabled,
-uses planner-controlled motion and one-block jumps, disables parkour sprinting and pillaring, and
-limits drops to two blocks. Pathfinder digging remains disabled. Native search is
-bounded to 32 blocks with 1-second think and 20 ms tick budgets.
+Survival navigation keeps native Pathfinder jump and vine-climb behavior
+enabled, uses planner-controlled one-block jumps, disables parkour, free motion,
+sprinting, pillaring, and digging, and limits drops to two blocks. Native
+search is bounded to 16 blocks with 250 ms think and 10 ms tick budgets.
 System 0 does not replace an active Pathfinder goal until movement stops or
 fails, preventing overlapping native searches.
 System 1 can select bounded `jump` action. Runtime supplies local terrain

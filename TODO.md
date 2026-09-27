@@ -93,6 +93,10 @@ testable outcome.
 
 Latest verified batch:
 
+- VC-023/024/028/030/032/033: native Pathfinder and collectblock integration,
+  typed actions and objectives, primitive recovery context, safe startup, and
+  single-plugin loading pass typecheck, tests, and build.
+- Authentication remains deferred by owner; control API stays loopback-only.
 - VC-007/008: `npm run typecheck`, `npm run build`, and `npm test` pass.
 - VC-009: lifecycle API and CLI coverage pass in `test/contracts.test.ts`.
 - VC-011: complete goal-to-action integration test passes with fake System 2,

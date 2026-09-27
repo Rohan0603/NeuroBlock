@@ -3,7 +3,7 @@
 **Repository:** NeuroBlock  
 **Runtime name:** VoxelCortex  
 **Status:** Local active-agent development  
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 
 ## 1. Mission
 
@@ -16,8 +16,11 @@ VoxelCortex is a Minecraft agent that combines:
 - Navigation uses the official `mineflayer-pathfinder` plugin with native `Movements` and goals.
 - Embedded terrain recovery is observation-driven: runtime checks feet/head occupancy, searches native safe stands, and System 0 owns bounded jump/replan mutation.
 - Navigation stalls trigger one bounded System 1 recovery decision with primitive world and surrounding-block data; System 0 still owns execution.
-- Survival movement uses native Pathfinder jumps, bounded parkour, free motion, vine climbing, no sprint or pillaring, and two-block drops.
-- Pathfinder search uses native 32-block, 1-second think, and 20 ms tick bounds to prevent runaway route computation.
+- Survival movement uses native Pathfinder jumps and vine climbing, with parkour,
+  free motion, sprinting, and pillaring disabled; drops are limited to two
+  blocks.
+- Pathfinder search uses native 16-block, 250 ms think, and 10 ms tick bounds
+  to prevent runaway route computation.
 - System 0 keeps one active `GoalNear` request at a time and accepts replacement only after Pathfinder stops or fails.
 - System 1 may select bounded `jump` from primitive local terrain data; System 0 owns the 350 ms jump pulse.
 - Runtime does not launch exploratory movement until a human goal exists.
@@ -111,8 +114,12 @@ Files:
 System 1 receives the System 2 directive, primitive world state, and allowed
 capabilities. It chooses one action from the validated set:
 
-`move`, `attack`, `mine`, `collect`, `eat`, `craft`, `place`, `flee`, `drop`, `equip`,
-`sleep`, `activate`, `idle`.
+`move`, `jump`, `attack`, `mine`, `collect`, `eat`, `craft`, `place`, `flee`,
+`drop`, `equip`, `sleep`, `activate`, `idle`.
+
+During navigation recovery, System 1 receives primitive terrain cells,
+feet/head blocks, entities, inventory, and navigation state. It can select
+bounded `jump`; System 0 owns the jump pulse and replanning.
 
 System 2 adds data-only `relevantCapabilities` names and a typed
 `StrategicObjective` to its directive. Jev receives that narrowed action menu
@@ -238,7 +245,7 @@ code.
 1. `ExecutionKernel` is the sole Mineflayer mutation boundary.
 2. System 0 remains synchronous and safety-first.
 3. Provider calls never execute inside the 20Hz tick.
-4. Worker messages contain primitive serializable data and transferable buffers,
+4. Provider messages contain primitive serializable data only.
    never Mineflayer objects.
 5. LLM responses are validated and stale responses are discarded. Strict
    provider deadline enforcement remains unimplemented.

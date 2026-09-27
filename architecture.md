@@ -40,7 +40,7 @@ the single source of truth for this list, the firewall schema, and Jev's
 per-action criteria):
 
 ```text
-move | attack | mine | eat | craft | place | flee | drop | equip | sleep | activate | idle
+move | jump | attack | mine | collect | eat | craft | place | flee | drop | equip | sleep | activate | idle
 ```
 
 System 2 may attach `relevantCapabilities` (action names only) to its
@@ -100,7 +100,9 @@ Control API exposes goals and lifecycle operations only. It binds to loopback an
 - Configures native `Movements` and submits `GoalNear` goals.
 - Consumes pathfinder lifecycle events for observable status and safe reset.
 - Detects solid feet/head occupancy on `physicsTick`, searches for a two-block-clear stand, and requests bounded rescue/replanning through System 0.
-- On Pathfinder stalls, sends System 1 current primitive world, entity, inventory, navigation, and surrounding-block data with all recovery actions enabled.
+- On Pathfinder stalls, sends System 1 current primitive world, entity,
+  inventory, navigation, and surrounding-block data with all recovery actions
+  enabled, including bounded `jump`.
 - Clears the active goal through the System 0 idle fail-safe.
 
 ## Data and safety invariants
@@ -110,7 +112,7 @@ Control API exposes goals and lifecycle operations only. It binds to loopback an
 3. System 1 emits validated intents, not Mineflayer calls.
 4. System 0 owns safety decisions and execution.
 5. The 20Hz path performs no provider network call or plugin wait.
-6. Worker messages contain primitive serializable data only.
+6. Provider messages contain primitive serializable data only.
 7. Control API remains loopback-only.
 8. Provider keys stay in `.env` and never enter logs.
 9. Errors remain visible in `/status`; failures do not become success-shaped
@@ -161,9 +163,15 @@ deterministic fakes.
 |---|---|---|
 | VC-010 | DONE | JSONL telemetry export and `/telemetry` count endpoint |
 | VC-012 | DONE | 1000-sample 20Hz p95 audit; current run 0.002 ms |
-| VC-013 | BLOCKED | Authenticated remote control; explicit approval required |
+| VC-013 | BLOCKED | Authenticated remote control; deferred by owner, loopback-only control remains |
 | VC-014 | DONE | Bounded recursive recipe prerequisite planning |
 | VC-016 | DONE | Validated block placement through System 0 |
+| VC-025 | BLOCKED | Live tower placement remains unverified after Pathfinder stalls |
+| VC-026 | BLOCKED | Live support selection still rejected by local server |
+| VC-027 | VERIFY | Embedded-block rescue awaits live Paper confirmation |
+| VC-029 | VERIFY | Native survival movement awaits live movement confirmation |
+| VC-031 | VERIFY | Single-flight navigation awaits bounded-memory live confirmation |
+| VC-034 | VERIFY | Pit escape context exists; visual live escape remains unconfirmed |
 
 Do not claim provider deadline or 20Hz performance guarantees until measured
 enforcement and audit evidence exist.
