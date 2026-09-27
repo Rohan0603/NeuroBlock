@@ -16,6 +16,30 @@ npm run build
 npm test
 ```
 
+## Quick start
+
+Use Paper `1.21.11` and Java 25. Keep Paper loopback-only with
+`online-mode=false` for local development.
+
+```powershell
+Set-Location .\server-1.21.11
+java -Xms1G -Xmx2G -jar paper.jar --nogui
+```
+
+In a second terminal:
+
+```powershell
+Set-Location ..
+$env:MINECRAFT_HOST = "localhost"
+$env:MINECRAFT_PORT = "25565"
+$env:MINECRAFT_USERNAME = "VoxelCortexBot"
+$env:MINECRAFT_VERSION = "1.21.11"
+npm run dev:viewer
+```
+
+Open <http://localhost:3000>. Use Java Minecraft client `1.21.11` to join
+`localhost:25565`. Do not use Forge `1.21.1` or Paper `26.2` with this setup.
+
 ## Provider diagnostics
 
 These commands make one real, minimal API request and return machine-readable
@@ -83,6 +107,21 @@ measure brainstem p95 latency against the 50 ms tick budget.
 Open `http://127.0.0.1:8787/telemetry.html` for an auto-refreshing browser log
 with the latest 200 events.
 
+Useful troubleshooting sequence:
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8787/status
+Invoke-WebRequest http://127.0.0.1:8787/telemetry
+npm run diagnose:jev
+npm run diagnose:opencode
+npm run audit:20hz
+```
+
+Expected status: `connected: true`, `paused: false`, and
+`emergencyStopped: false`. If status is unavailable, start Paper first, then
+restart `npm run dev:viewer`. If provider diagnostics fail, inspect `.env`
+names and keys without printing keys to logs.
+
 Useful event types:
 
 - `system2.directive`: goal and selected strategic directive.
@@ -132,17 +171,24 @@ and strategy integrations can be exercised with fakes without requiring a live
 Minecraft server or provider credentials. Worker navigation runs through
 bounded A* when enabled by the active runtime.
 
+Home, farm, and shelter goals currently support movement, mining, bounded
+crafting, and validated block placement. Completion depends on inventory,
+available recipes, safe terrain, and provider action choices; the agent does
+not perform unrestricted world editing.
+
 ## Invariants
 
 - `ExecutionKernel` is the only module that mutates Mineflayer state.
 - The brainstem tick performs only synchronous safety and intent checks.
 - Future worker messages must contain primitive serializable data only.
 - LLM responses are schema-validated and stale decisions are rejected.
+- Repeated digging is single-flight to prevent overlapping Mineflayer dig
+  operations.
+- Telemetry records system decisions without storing hidden model
+  chain-of-thought.
 
 The authoritative architecture constraints and phased delivery requirements are
-in [`plan.md`](./plan.md). The implementation plan for unattended development
-is maintained in the session handoff artifact rather than committed to the
-repository.
+in [`plan.md`](./plan.md).
 
 ## Agentic development handoff
 
