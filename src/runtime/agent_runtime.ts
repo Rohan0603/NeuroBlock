@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Action, AgentStatus, IntentEpoch } from '../core/types.js';
+import type { Action, AgentStatus, Intent, IntentEpoch } from '../core/types.js';
 import { GoalStore } from '../core/goal_store.js';
 import { BrainstemTick, type IntentSource } from '../system0/brainstem_tick.js';
 import { ExecutionKernel } from '../system0/execution_kernel.js';
@@ -43,6 +43,8 @@ export class AgentRuntime {
   private lastError: string | undefined;
   private workers: WorkerManager | undefined;
   private pathLength = 0;
+  private repeatedAction = 0;
+  private previousAction: Action | undefined;
 
   public constructor(private readonly bot: Bot, options: AgentRuntimeOptions = {}) {
     this.kernel = new ExecutionKernel(bot);
@@ -112,13 +114,14 @@ export class AgentRuntime {
       if ((this.goals.current?.version ?? 0) !== this.lastGoalVersion) await this.refreshStrategy();
       const directive = this.strategy.latest?.text ?? 'Explore the nearby world and improve survival.';
       this.telemetry.record('system1.request', { directive });
-      const intent = await this.jev.requestIntent(JSON.stringify({
+      const providerIntent = await this.jev.requestIntent(JSON.stringify({
         directive,
         state: this.observe(),
         capabilities: ['move', 'attack', 'mine', 'eat', 'craft', 'place'],
         role: 'Convert the strategic directive into one immediate validated action.',
       }), this.stateVersion, ['move', 'attack', 'mine', 'eat', 'craft', 'place', 'idle']);
-      this.source.latest = { intent: intent ?? { action: 'move', state_version: this.stateVersion }, stateVersion: this.stateVersion, requestId: Date.now() };
+      const intent = this.completeIntent(providerIntent ?? { action: 'move', state_version: this.stateVersion }, directive);
+      this.source.latest = { intent, stateVersion: this.stateVersion, requestId: Date.now() };
       this.telemetry.record('system1.intent', { action: this.source.latest.intent.action, target: this.source.latest.intent.target });
       this.lastAction = this.source.latest.intent.action;
       this.decisionCount += 1;
@@ -133,6 +136,41 @@ export class AgentRuntime {
   }
 
   private async decide(): Promise<void> { await this.runDecisionCycle(); }
+
+  private completeIntent(intent: Intent, directive: string): Intent {
+    const goal = `${this.goals.current?.text ?? ''} ${directive}`.toLowerCase();
+    const repeated = this.previousAction === intent.action;
+    this.repeatedAction = repeated ? this.repeatedAction + 1 : 1;
+    this.previousAction = intent.action;
+    if (intent.target) return intent;
+    if (intent.action === 'mine' && repeated && this.repeatedAction >= 4 && goal.includes('build')) {
+      return { action: 'craft', target: 'oak_planks', state_version: intent.state_version };
+    }
+    if (intent.action === 'mine') {
+      const block = this.bot.blockAt(this.bot.entity.position.offset(0, -1, 0));
+      return block ? { ...intent, target: String(block.type) } : intent;
+    }
+    if (intent.action === 'craft') {
+      const target = goal.includes('farm') ? 'wooden_hoe' : 'oak_planks';
+      return { ...intent, target };
+    }
+    if (intent.action === 'place') {
+      const target = this.placementTarget();
+      return target ? { ...intent, target } : intent;
+    }
+    return intent;
+  }
+
+  private placementTarget(): string | undefined {
+    const candidates = this.bot.inventory.items().find((item) => /planks|cobblestone|stone|dirt|bricks/.test(item.name));
+    if (!candidates) return undefined;
+    const position = this.bot.entity.position;
+    return JSON.stringify({
+      block: candidates.name,
+      reference: { x: Math.floor(position.x), y: Math.floor(position.y - 1), z: Math.floor(position.z) },
+      face: { x: 0, y: 1, z: 0 },
+    });
+  }
 
   private async refreshStrategy(): Promise<void> {
     await this.strategy.run(this.goals.current?.text);

@@ -117,7 +117,8 @@ failure is surfaced through runtime status.
 Runtime writes structured JSONL events. Logs expose goal, directive, selected
 intent, safety result, executed action, idle reason, and failures. They do not
 attempt to capture hidden model chain-of-thought. Query current events with
-`GET /telemetry`; use `TELEMETRY_FILE` for a separate local log path.
+`GET /telemetry`; open `/telemetry.html` for an auto-refreshing browser view;
+use `TELEMETRY_FILE` for a separate local log path.
 
 ## Startup and shutdown
 

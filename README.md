@@ -80,6 +80,9 @@ Runtime events append as JSON Lines to `telemetry.jsonl` by default. `GET /telem
 `TELEMETRY_FILE` to choose another local path. Run `npm run audit:20hz` to
 measure brainstem p95 latency against the 50 ms tick budget.
 
+Open `http://127.0.0.1:8787/telemetry.html` for an auto-refreshing browser log
+with the latest 200 events.
+
 Useful event types:
 
 - `system2.directive`: goal and selected strategic directive.

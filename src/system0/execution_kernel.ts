@@ -4,7 +4,8 @@ import { Vec3 } from 'vec3';
 import type { Recipe } from 'prismarine-recipe';
 
 export class ExecutionKernel {
-  public constructor(private readonly bot: Bot) {}
+  private digging = false;
+  public constructor(private readonly bot: Bot, private readonly onError?: (error: unknown) => void) {}
 
   public move(intent: Intent): void {
     this.bot.setControlState('forward', intent.action === 'move');
@@ -16,8 +17,11 @@ export class ExecutionKernel {
   }
 
   public dig(blockId: number): void {
+    if (this.digging) return;
     const block = this.bot.blockAt(this.bot.entity.position.offset(0, -1, 0));
-    if (block && block.type === blockId && this.bot.canDigBlock(block)) void this.bot.dig(block);
+    if (!block || block.type !== blockId || !this.bot.canDigBlock(block)) return;
+    this.digging = true;
+    void this.bot.dig(block).catch((error) => this.onError?.(error)).finally(() => { this.digging = false; });
   }
 
   public eat(): void {
@@ -28,7 +32,11 @@ export class ExecutionKernel {
   public async craft(itemName: string): Promise<void> {
     const item = this.bot.registry.itemsByName[itemName];
     if (!item) return;
-    for (const recipe of this.craftPlan(item.id, 6, new Set<number>())) await this.bot.craft(recipe, 1, undefined);
+    try {
+      for (const recipe of this.craftPlan(item.id, 6, new Set<number>())) await this.bot.craft(recipe, 1, undefined);
+    } catch (error) {
+      this.onError?.(error);
+    }
   }
 
   private craftPlan(itemId: number, depth: number, visiting: Set<number>): readonly Recipe[] {
@@ -53,8 +61,13 @@ export class ExecutionKernel {
       if (!value.block || !value.reference || !value.face) return;
       const item = this.bot.registry.itemsByName[value.block];
       const reference = this.bot.blockAt(new Vec3(value.reference.x, value.reference.y, value.reference.z));
-      if (!item || !reference || !this.bot.heldItem || this.bot.heldItem.type !== item.id) return;
-      void this.bot.placeBlock(reference, new Vec3(value.face.x, value.face.y, value.face.z));
+      const face = value.face;
+      if (!item || !reference || !face) return;
+      const place = async (): Promise<void> => {
+        if (!this.bot.heldItem || this.bot.heldItem.type !== item.id) await this.bot.equip(item.id, 'hand');
+        await this.bot.placeBlock(reference, new Vec3(face.x, face.y, face.z));
+      };
+      void place().catch((error) => this.onError?.(error));
     } catch {
       return;
     }

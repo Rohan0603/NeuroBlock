@@ -16,7 +16,9 @@ export class BrainstemTick {
   private lastAction: string | undefined;
 
   public constructor(private readonly bot: Bot, private readonly source: IntentSource, private readonly event?: BrainstemEvent) {
-    this.kernel = new ExecutionKernel(bot);
+    this.kernel = new ExecutionKernel(bot, (error) => this.event?.('system0.error', {
+      error: error instanceof Error ? error.message : String(error),
+    }));
   }
 
   public start(): void {

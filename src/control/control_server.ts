@@ -28,6 +28,19 @@ function json(response: ServerResponse, status: number, value: unknown): void {
   response.end(payload);
 }
 
+function telemetryPage(response: ServerResponse): void {
+  const html = `<!doctype html><meta charset="utf-8"><title>VoxelCortex telemetry</title>
+<style>body{font:14px system-ui;margin:20px;background:#111;color:#eee}table{border-collapse:collapse;width:100%}td,th{padding:6px;border-bottom:1px solid #444;text-align:left}pre{white-space:pre-wrap;margin:0}</style>
+<h1>VoxelCortex telemetry</h1><p id="summary">Loading...</p><table><thead><tr><th>Time</th><th>System</th><th>Data</th></tr></thead><tbody id="events"></tbody></table>
+<script>
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function refresh(){const events=await (await fetch('/telemetry')).json();document.querySelector('#summary').textContent=events.length+' events; refresh 2s';document.querySelector('#events').innerHTML=events.slice(-200).reverse().map(e=>'<tr><td>'+new Date(e.time).toLocaleTimeString()+'</td><td>'+esc(e.type)+'</td><td><pre>'+esc(JSON.stringify(e.data||{}))+'</pre></td></tr>').join('')}
+refresh();setInterval(refresh,2000)
+</script>`;
+  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  response.end(html);
+}
+
 export class ControlServer {
   private server: Server | undefined;
   public constructor(private readonly options: ControlServerOptions) {}
@@ -42,6 +55,10 @@ export class ControlServer {
         }
         if (request.method === 'GET' && request.url === '/telemetry') {
           json(response, 200, this.options.telemetry ? await this.options.telemetry() : { error: 'Telemetry unavailable' });
+          return;
+        }
+        if (request.method === 'GET' && request.url === '/telemetry.html') {
+          telemetryPage(response);
           return;
         }
         if (request.method === 'POST' && request.url === '/goal') {
