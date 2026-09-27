@@ -44,10 +44,11 @@ irreversible actions, and ambiguous multi-step instructions.
 - Only [`src/system0/execution_kernel.ts`](./src/system0/execution_kernel.ts)
   may call Mineflayer mutation methods.
 - System 0 must not perform network I/O, JSON parsing, heavy computation, or
-  worker waits on its critical path.
+  plugin waits on its critical path.
 - Human goals enter System 2. System 2 emits strategy. System 1 emits
   validated intents. System 0 decides whether execution is safe.
-- Never pass `Bot`, `Block`, `Entity`, or `Vec3` instances to workers.
+- Pathfinder and collectblock own navigation internals; application code passes
+  only validated primitive targets into System 0.
 - Use TypeBox/Ajv for network intent validation; do not introduce Zod here.
 - Keep provider keys in `.env`; never print, commit, or paste them into logs.
 - The local Paper server must stay loopback/offline-only for development.

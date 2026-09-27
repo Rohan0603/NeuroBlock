@@ -12,5 +12,3 @@ export * from './system2/strategic_loop.js';
 export * from './system2/opencode_client.js';
 export * from './control/control_server.js';
 export * from './runtime/agent_runtime.js';
-export * from './workers/grid_extractor.js';
-export * from './workers/worker_manager.js';

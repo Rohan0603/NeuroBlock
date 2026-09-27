@@ -23,6 +23,8 @@
     "ajv": "^8.17.1",
     "canvas": "^3.2.3",
     "mineflayer": "^4.27.0",
+    "mineflayer-collectblock": "^1.6.0",
+    "mineflayer-pathfinder": "^2.4.5",
     "prismarine-viewer": "^1.33.0"
   },
   "devDependencies": {

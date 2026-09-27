@@ -1,5 +1,6 @@
 import { choice, TypeSafeClient } from '@typesafe-ai/sdk';
 import type { Action, Intent } from '../core/types.js';
+import { CAPABILITIES } from '../core/capabilities.js';
 
 export interface JevClientOptions {
   readonly model?: string;
@@ -20,7 +21,8 @@ export class JevClient {
     if (actions.length === 0) return null;
     const criteria = Object.fromEntries(actions.map((action) => [
       action,
-      `Choose the ${action} action only when it is safe and valid for the supplied state.`,
+      CAPABILITIES.find((capability) => capability.action === action)?.description
+        ?? `Choose ${action} only when safe and valid for supplied state.`,
     ]));
     const result = await this.client.systemOne({
       model: this.model,

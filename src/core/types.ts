@@ -1,8 +1,20 @@
-export type Action = 'move' | 'attack' | 'mine' | 'eat' | 'craft' | 'place' | 'idle';
+export type Action = 'move' | 'jump' | 'attack' | 'mine' | 'collect' | 'eat' | 'craft' | 'place' | 'flee' | 'drop' | 'equip' | 'sleep' | 'activate' | 'idle';
+
+export type EquipmentDestination = 'hand' | 'off-hand' | 'head' | 'torso' | 'legs' | 'feet';
+export type IntentTarget =
+  | { readonly kind: 'near'; readonly x: number; readonly y: number; readonly z: number; readonly range?: number }
+  | { readonly kind: 'entity'; readonly id: number }
+  | { readonly kind: 'block'; readonly type: number }
+  | { readonly kind: 'collect'; readonly names: readonly string[]; readonly maxDistance: number }
+  | { readonly kind: 'item'; readonly name: string }
+  | { readonly kind: 'craft'; readonly item: string }
+  | { readonly kind: 'equip'; readonly item: string; readonly destination: EquipmentDestination }
+  | { readonly kind: 'activate'; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly kind: 'place'; readonly block: string; readonly reference: { readonly x: number; readonly y: number; readonly z: number }; readonly face: { readonly x: number; readonly y: number; readonly z: number } };
 
 export interface Intent {
   readonly action: Action;
-  readonly target?: string;
+  readonly target?: IntentTarget;
   readonly state_version: number;
 }
 
@@ -20,7 +32,17 @@ export interface TickState {
 
 export interface StrategicDirective {
   readonly text: string;
+  readonly objective: StrategicObjective;
   readonly createdAt: number;
+  readonly relevantCapabilities?: readonly Action[];
+}
+
+export type StrategicObjectiveKind = 'explore' | 'collect' | 'build' | 'farm' | 'survive' | 'combat' | 'shelter';
+
+export interface StrategicObjective {
+  readonly kind: StrategicObjectiveKind;
+  readonly text: string;
+  readonly constraints: readonly string[];
 }
 
 export interface AgentGoal {
@@ -39,12 +61,16 @@ export interface AgentStatus {
   readonly stateVersion: number;
   readonly lastError?: string;
   readonly decisionCount: number;
-  readonly pathLength: number;
   readonly telemetryEvents: number;
+  readonly telemetryMalformedRecords?: number;
+  readonly telemetryWriteError?: string;
+  readonly navigation?: NavigationStatus;
 }
 
-export interface GridSnapshot {
-  readonly blocks: Uint16Array;
-  readonly origin: { readonly x: number; readonly y: number; readonly z: number };
-  readonly size: number;
+export interface NavigationStatus {
+  readonly state: 'idle' | 'planning' | 'moving' | 'stalled';
+  readonly goal?: { readonly x: number; readonly y: number; readonly z: number };
+  readonly lastPathStatus?: 'success' | 'partial' | 'timeout' | 'noPath';
+  readonly recoveryCount: number;
+  readonly lastFault?: string;
 }

@@ -7,6 +7,10 @@
 
 **Prime Directive:** **The Node.js event loop is sacred.** Pathfinding, LLM network requests, and heavy JSON parsing must NEVER block the main 20Hz (50ms) physics tick. The LLM is an asynchronous, unreliable advisor, not a synchronous controller.
 
+> Historical plan. Custom worker A* navigation was replaced by
+> `mineflayer-pathfinder`; typed targets and `mineflayer-collectblock` now
+> define current navigation and collection behavior.
+
 ---
 
 ## 1. Architecture & Directory Structure

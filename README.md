@@ -1,11 +1,11 @@
 # VoxelCortex
 
 VoxelCortex is a Node.js 22+ Minecraft agent skeleton split into a synchronous
-20Hz brainstem, an asynchronous LLM control plane, isolated worker
+20Hz brainstem, asynchronous LLM control plane, native Mineflayer plugins
 computation, and a slower strategic loop.
 
 See [architecture.md](./architecture.md) for ownership boundaries, runtime
-flow, control endpoints, worker isolation, invariants, and pending work.
+flow, control endpoints, plugin ownership, invariants, and pending work.
 
 ## Development
 
@@ -75,12 +75,13 @@ npm run dev:viewer
 ```
 
 Open <http://localhost:3000>. The viewer is a development-only adapter; it
-does not change the brainstem, worker boundary, or production authentication
+does not change brainstem, plugin ownership, or production authentication
 behavior. Set `MINECRAFT_VERSION` when the server version cannot be inferred.
 
 After the bot spawns, `dev:viewer` also starts the active runtime. Human goals
-go to System 2 first; System 2 produces a strategic directive, and System 1
-turns that directive plus current state into a validated immediate action.
+go to System 2 first; System 2 produces a strategic directive plus typed
+objective, and System 1 turns both plus current state into a validated
+immediate action.
 System 0 remains the final safety and execution boundary.
 
 Set or inspect a goal from another terminal:
@@ -140,6 +141,37 @@ Useful event types:
 confirm movement. Logs record decisions and directives, not hidden provider
 chain-of-thought.
 
+Navigation emits planning, waypoint, progress, stall, and recovery events. A
+route needs support and feet/head clearance. If physics-tick observation finds
+the bot embedded in a solid feet/head block, runtime searches native
+`findBlocks` results for a two-block-clear stand, asks System 0 for one bounded
+jump pulse, and replans with `GoalNear`. After three rescue attempts, runtime
+pauses and `/status` reports the navigation fault. Status also reports
+malformed telemetry records and write failures when observed.
+
+Survival navigation keeps native Pathfinder jump and climb behavior enabled,
+uses planner-controlled motion and one-block jumps, disables parkour sprinting and pillaring, and
+limits drops to two blocks. Pathfinder digging remains disabled. Native search is
+bounded to 32 blocks with 1-second think and 20 ms tick budgets.
+System 0 does not replace an active Pathfinder goal until movement stops or
+fails, preventing overlapping native searches.
+System 1 can select bounded `jump` action. Runtime supplies local terrain
+cells, solid supports, feet/head blocks, and navigation state. System 0 owns
+350 ms jump pulse.
+Runtime stays idle until human goal input arrives; startup no longer launches
+unbounded exploratory movement.
+Runtime loads Pathfinder before collectblock so collectblock reuses one
+navigation plugin instance.
+
+When Pathfinder reports a stall, System 1 receives current position, health,
+inventory, entity distances, feet/head blocks, navigation fault, and nearby
+solid block coordinates. System 1 receives the full recovery action set and
+chooses the next validated action. A fourth failed recovery pauses runtime.
+
+If status reports `Navigation: no-route` after chunk loading, move the bot to
+traversable terrain before retrying. The runtime deliberately does not mine or
+issue an unvalidated escape action to force progress.
+
 ## Provider API configuration
 
 Provider credentials belong in the ignored root `.env`, copied from
@@ -173,26 +205,26 @@ for GPT models and set the matching model ID. The API key stays server-side
 and is never sent through the Minecraft 20Hz loop. Do not paste keys into
 source files or commit `.env`.
 
-The implementation is intentionally adapter-oriented: Mineflayer, LLM, worker,
-and strategy integrations can be exercised with fakes without requiring a live
-Minecraft server or provider credentials. Worker navigation runs through
-bounded A* when enabled by the active runtime.
+The implementation is intentionally adapter-oriented: Mineflayer, LLM, and
+strategy integrations can be exercised with fakes without requiring a live
+Minecraft server or provider credentials. Navigation uses the maintained
+`mineflayer-pathfinder` plugin when enabled by the active runtime.
 
 Home, farm, and shelter goals currently support movement, mining, bounded
 crafting, and validated block placement. Completion depends on inventory,
 available recipes, safe terrain, and provider action choices; the agent does
 not perform unrestricted world editing.
 
-Navigation computes a short worker path and steers the bot toward its next
-waypoint. The browser viewer camera may not follow automatically; use the
-viewer camera controls or inspect `/status` and `/telemetry.html` to confirm
-movement and decisions.
+Navigation submits native `GoalNear` targets and reports pathfinder events.
+The browser viewer camera may not follow automatically; use the viewer camera
+controls or inspect `/status` and `/telemetry.html` to confirm movement and
+decisions.
 
 ## Invariants
 
 - `ExecutionKernel` is the only module that mutates Mineflayer state.
 - The brainstem tick performs only synchronous safety and intent checks.
-- Future worker messages must contain primitive serializable data only.
+- Pathfinder movement remains bounded by its configured native `Movements`.
 - LLM responses are schema-validated and stale decisions are rejected.
 - Repeated digging is single-flight to prevent overlapping Mineflayer dig
   operations.

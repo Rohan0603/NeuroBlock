@@ -19,7 +19,7 @@ Human input never becomes a direct Minecraft action.
 [`src/system2/opencode_client.ts`](./src/system2/opencode_client.ts)
 
 - Reads the current human goal and primitive observations.
-- Uses OpenCode Zen to produce one concise strategic directive.
+- Uses OpenCode Zen to produce one concise strategic directive, then maps it to a typed `StrategicObjective`.
 - Refreshes on startup, goal changes, and its configured slow interval.
 - Does not call Mineflayer or mutate world state.
 
@@ -29,16 +29,23 @@ Human input never becomes a direct Minecraft action.
 [`src/system1/firewall.ts`](./src/system1/firewall.ts)
 
 - Receives the System 2 directive and current primitive state.
-- Selects one allowed action.
+- Selects one allowed action from a context-sensitive menu (full menu when
+  the directive gives no clear match).
 - Validates action shape with TypeBox/Ajv.
 - Produces an `Intent` with a state version.
 - Runs asynchronously outside the 20Hz safety path.
 
-Allowed actions:
+Allowed actions ([`src/core/capabilities.ts`](./src/core/capabilities.ts) is
+the single source of truth for this list, the firewall schema, and Jev's
+per-action criteria):
 
 ```text
-move | attack | mine | eat | craft | idle
+move | attack | mine | eat | craft | place | flee | drop | equip | sleep | activate | idle
 ```
+
+System 2 may attach `relevantCapabilities` (action names only) to its
+directive and typed objective metadata; System 2 never calls Mineflayer or
+invokes an action.
 
 ### System 0: safety and execution
 
@@ -64,7 +71,7 @@ Mineflayer emits `spawn`. It owns:
 - Jev provider for System 1.
 - `BrainstemTick` and `ExecutionKernel` for System 0.
 - Loopback `ControlServer`.
-- Optional worker navigation.
+- Optional `mineflayer-pathfinder` navigation.
 
 The runtime decision cycle runs below the safety tick frequency. It updates the
 latest intent; System 0 decides whether that intent can execute.
@@ -82,22 +89,19 @@ Default control host: `127.0.0.1`.
 | `POST /resume` | Resume decisions unless emergency stop is active |
 | `POST /emergency-stop` | Permanently stop decisions until process restart |
 
-No direct action endpoint exists. Remote authenticated control is not
-implemented and remains blocked pending explicit security approval.
+Control API exposes goals and lifecycle operations only. It binds to loopback and never exposes direct action dispatch remotely.
 
-## Worker boundary
+## Navigation boundary
 
-**Code:** [`src/workers/grid_extractor.ts`](./src/workers/grid_extractor.ts),
-[`src/workers/pathfinder.worker.ts`](./src/workers/pathfinder.worker.ts),
-[`src/workers/worker_manager.ts`](./src/workers/worker_manager.ts)
+**Code:** [`src/runtime/agent_runtime.ts`](./src/runtime/agent_runtime.ts),
+[`src/system0/execution_kernel.ts`](./src/system0/execution_kernel.ts)
 
-- Extracts a bounded local grid into primitive `Uint16Array` data.
-- Transfers the grid buffer to a worker.
-- Runs bounded A* search in the worker.
-- Returns path coordinates and path length to runtime.
-
-Workers never receive `Bot`, `Block`, `Entity`, or `Vec3` instances. Worker
-failure is surfaced through runtime status.
+- Loads the maintained `mineflayer-pathfinder` plugin.
+- Configures native `Movements` and submits `GoalNear` goals.
+- Consumes pathfinder lifecycle events for observable status and safe reset.
+- Detects solid feet/head occupancy on `physicsTick`, searches for a two-block-clear stand, and requests bounded rescue/replanning through System 0.
+- On Pathfinder stalls, sends System 1 current primitive world, entity, inventory, navigation, and surrounding-block data with all recovery actions enabled.
+- Clears the active goal through the System 0 idle fail-safe.
 
 ## Data and safety invariants
 
@@ -105,12 +109,13 @@ failure is surfaced through runtime status.
 2. System 2 emits directives, not actions.
 3. System 1 emits validated intents, not Mineflayer calls.
 4. System 0 owns safety decisions and execution.
-5. The 20Hz path performs no provider network call or worker wait.
+5. The 20Hz path performs no provider network call or plugin wait.
 6. Worker messages contain primitive serializable data only.
 7. Control API remains loopback-only.
 8. Provider keys stay in `.env` and never enter logs.
 9. Errors remain visible in `/status`; failures do not become success-shaped
    results.
+10. Mineflayer lifecycle faults safe-idle runtime and clear movement controls.
 
 ## Decision observability
 
@@ -121,6 +126,8 @@ attempt to capture hidden model chain-of-thought. Query current events with
 use `TELEMETRY_FILE` for a separate local log path. The API returns the latest
 500 events, each with a monotonic sequence number. Position is recorded on
 System 0 execution events so movement can be verified from telemetry.
+Navigation records planning, waypoint selection, progress, stalls, recovery,
+and recovery exhaustion. Status exposes route state and telemetry diagnostics.
 
 ## Startup and shutdown
 
@@ -130,7 +137,7 @@ System 0 execution events so movement can be verified from telemetry.
 4. Viewer and agent runtime start.
 5. Use `npm run goal -- set "..."` to provide a goal.
 6. Use `npm run goal -- emergency-stop` for immediate idle and decision stop.
-7. Process shutdown stops control server, strategy loop, workers, and bot
+7. Process shutdown stops control server, strategy loop, pathfinder goals, and bot
    mutation before exit.
 
 ## Validation
