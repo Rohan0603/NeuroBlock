@@ -118,7 +118,9 @@ Runtime writes structured JSONL events. Logs expose goal, directive, selected
 intent, safety result, executed action, idle reason, and failures. They do not
 attempt to capture hidden model chain-of-thought. Query current events with
 `GET /telemetry`; open `/telemetry.html` for an auto-refreshing browser view;
-use `TELEMETRY_FILE` for a separate local log path.
+use `TELEMETRY_FILE` for a separate local log path. The API returns the latest
+500 events, each with a monotonic sequence number. Position is recorded on
+System 0 execution events so movement can be verified from telemetry.
 
 ## Startup and shutdown
 

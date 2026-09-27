@@ -43,6 +43,7 @@ export class AgentRuntime {
   private lastError: string | undefined;
   private workers: WorkerManager | undefined;
   private pathLength = 0;
+  private navigationTarget: { x: number; y: number; z: number } | undefined;
   private repeatedAction = 0;
   private previousAction: Action | undefined;
 
@@ -127,6 +128,7 @@ export class AgentRuntime {
       this.decisionCount += 1;
       this.telemetry.record('decision', { action: this.lastAction, stateVersion: this.stateVersion });
       this.lastError = undefined;
+      if (intent.action === 'move' && this.workers) void this.refreshNavigation();
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : 'Decision cycle failed';
       this.source.latest = undefined;
@@ -139,16 +141,30 @@ export class AgentRuntime {
 
   private completeIntent(intent: Intent, directive: string): Intent {
     const goal = `${this.goals.current?.text ?? ''} ${directive}`.toLowerCase();
+    const building = /build|home|shelter|house|farm/.test(goal);
+    const inventory = this.bot.inventory.items();
+    const hasPlanks = inventory.some((item) => /planks/.test(item.name) && item.count > 0);
+    const hasLogs = inventory.some((item) => /log/.test(item.name) && item.count > 0);
+    if (building && hasPlanks && (intent.action === 'move' || intent.action === 'mine' || intent.action === 'place')) {
+      const target = this.placementTarget();
+      if (target) return { action: 'place', target, state_version: intent.state_version };
+    }
+    if (building && hasLogs && intent.action === 'mine') {
+      return { action: 'craft', target: 'oak_planks', state_version: intent.state_version };
+    }
     const repeated = this.previousAction === intent.action;
     this.repeatedAction = repeated ? this.repeatedAction + 1 : 1;
     this.previousAction = intent.action;
     if (intent.target) return intent;
+    if (intent.action === 'move' && this.navigationTarget) {
+      return { ...intent, target: JSON.stringify(this.navigationTarget) };
+    }
     if (intent.action === 'mine' && repeated && this.repeatedAction >= 4 && goal.includes('build')) {
       return { action: 'craft', target: 'oak_planks', state_version: intent.state_version };
     }
     if (intent.action === 'mine') {
       const block = this.bot.blockAt(this.bot.entity.position.offset(0, -1, 0));
-      return block ? { ...intent, target: String(block.type) } : intent;
+      return block && block.type > 0 ? { ...intent, target: String(block.type) } : { action: 'move', state_version: intent.state_version };
     }
     if (intent.action === 'craft') {
       const target = goal.includes('farm') ? 'wooden_hoe' : 'oak_planks';
@@ -187,6 +203,12 @@ export class AgentRuntime {
       const snapshot = extractLocalGrid(this.bot);
       const path = await this.workers.findPath(snapshot);
       this.pathLength = path.length;
+      const next = path[1];
+      this.navigationTarget = next ? {
+        x: snapshot.origin.x + next.x + 0.5,
+        y: snapshot.origin.y + next.y,
+        z: snapshot.origin.z + next.z + 0.5,
+      } : undefined;
     } catch (error) {
       this.lastError = error instanceof Error ? `Navigation: ${error.message}` : 'Navigation failed';
     }

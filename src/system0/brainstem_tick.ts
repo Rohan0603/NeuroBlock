@@ -40,16 +40,21 @@ export class BrainstemTick {
     if (safety !== 'SAFE' || !epoch || epoch.stateVersion !== this.stateVersion) {
       this.kernel.execute({ action: 'idle', state_version: this.stateVersion });
       if (this.lastAction !== 'idle' || logSafety) {
-        this.event?.('system0.execution', { action: 'idle', reason: safety !== 'SAFE' ? 'unsafe' : 'missing-or-stale-intent' });
+        this.event?.('system0.execution', { action: 'idle', reason: safety !== 'SAFE' ? 'unsafe' : 'missing-or-stale-intent', position: this.position() });
         this.lastAction = 'idle';
       }
       return;
     }
     this.kernel.execute(epoch.intent);
     if (this.lastAction !== epoch.intent.action || logSafety) {
-      this.event?.('system0.execution', { action: epoch.intent.action, target: epoch.intent.target });
+      this.event?.('system0.execution', { action: epoch.intent.action, target: epoch.intent.target, position: this.position() });
       this.lastAction = epoch.intent.action;
     }
+  }
+
+  private position(): { x: number; y: number; z: number } | undefined {
+    const position = this.bot.entity?.position;
+    return position ? { x: Number(position.x.toFixed(2)), y: Number(position.y.toFixed(2)), z: Number(position.z.toFixed(2)) } : undefined;
   }
 
   public advanceState(): void { this.stateVersion += 1; }

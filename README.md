@@ -107,6 +107,11 @@ measure brainstem p95 latency against the 50 ms tick budget.
 Open `http://127.0.0.1:8787/telemetry.html` for an auto-refreshing browser log
 with the latest 200 events.
 
+Telemetry endpoint returns latest 500 events by default. Each event includes a
+monotonic `sequence` inside `data`, making dropped, reordered, or repeated
+events easy to detect. `system0.execution` also records bot position; compare
+successive positions to prove movement rather than trusting action labels.
+
 Useful troubleshooting sequence:
 
 ```powershell
@@ -131,7 +136,9 @@ Useful event types:
 - `system0.execution`: executed action or idle reason.
 - `decision.failed`: provider/runtime failure.
 
-Logs record decisions and directives, not hidden provider chain-of-thought.
+`system0.execution` includes bot position, so compare positions across events to
+confirm movement. Logs record decisions and directives, not hidden provider
+chain-of-thought.
 
 ## Provider API configuration
 
@@ -175,6 +182,11 @@ Home, farm, and shelter goals currently support movement, mining, bounded
 crafting, and validated block placement. Completion depends on inventory,
 available recipes, safe terrain, and provider action choices; the agent does
 not perform unrestricted world editing.
+
+Navigation computes a short worker path and steers the bot toward its next
+waypoint. The browser viewer camera may not follow automatically; use the
+viewer camera controls or inspect `/status` and `/telemetry.html` to confirm
+movement and decisions.
 
 ## Invariants
 

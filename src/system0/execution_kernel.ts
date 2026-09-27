@@ -5,9 +5,22 @@ import type { Recipe } from 'prismarine-recipe';
 
 export class ExecutionKernel {
   private digging = false;
+  private crafting = false;
   public constructor(private readonly bot: Bot, private readonly onError?: (error: unknown) => void) {}
 
   public move(intent: Intent): void {
+    if (intent.target) {
+      try {
+        const target = JSON.parse(intent.target) as { x?: number; y?: number; z?: number };
+        if (typeof target.x === 'number' && typeof target.y === 'number' && typeof target.z === 'number') {
+          const position = this.bot.entity.position;
+          const yaw = Math.atan2(-(target.x - position.x), target.z - position.z);
+          void this.bot.look(yaw, 0, true).catch((error) => this.onError?.(error));
+        }
+      } catch (error) {
+        this.onError?.(error);
+      }
+    }
     this.bot.setControlState('forward', intent.action === 'move');
   }
 
@@ -30,12 +43,16 @@ export class ExecutionKernel {
   }
 
   public async craft(itemName: string): Promise<void> {
+    if (this.crafting) return;
     const item = this.bot.registry.itemsByName[itemName];
     if (!item) return;
+    this.crafting = true;
     try {
       for (const recipe of this.craftPlan(item.id, 6, new Set<number>())) await this.bot.craft(recipe, 1, undefined);
     } catch (error) {
       this.onError?.(error);
+    } finally {
+      this.crafting = false;
     }
   }
 
