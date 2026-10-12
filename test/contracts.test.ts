@@ -452,6 +452,7 @@ test('attack intent falls back to move when survival policy has no answer', asyn
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Defend the camp', 60_000);
   const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
+  runtime.goals.set('Explore the nearby world');
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
@@ -475,6 +476,7 @@ test('flee intent falls back to move when survival policy has no answer', async 
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Flee the zombie', 60_000);
   const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
+  runtime.goals.set('Explore the nearby world');
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
@@ -499,6 +501,7 @@ test('drop intent falls back to move when survival policy has no answer', async 
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Clean the inventory', 60_000);
   const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
+  runtime.goals.set('Explore the nearby world');
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
@@ -524,6 +527,7 @@ test('equip intent falls back to move when survival policy has no answer', async
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Gear up for danger', 60_000);
   const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
+  runtime.goals.set('Explore the nearby world');
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
@@ -549,6 +553,7 @@ test('activate intent falls back to move when survival policy has no answer', as
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Open the door', 60_000);
   const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
+  runtime.goals.set('Explore the nearby world');
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
