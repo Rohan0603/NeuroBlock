@@ -4,13 +4,25 @@ export interface CapabilityDefinition {
   readonly action: Action;
   readonly description: string;
   readonly tags: readonly string[];
+  readonly preconditions?: readonly string[];
+  readonly targetKinds?: readonly string[];
+  readonly failureCodes?: readonly string[];
+  readonly recoveryActions?: readonly Action[];
 }
 
 export const CAPABILITIES: readonly CapabilityDefinition[] = [
   { action: 'move', description: 'Use bot.pathfinder with a GoalNear target.', tags: ['move', 'travel', 'explore', 'go', 'approach', 'navigate'] },
   { action: 'jump', description: 'Pulse bot.setControlState jump briefly to climb or escape a shallow pit.', tags: ['jump', 'climb', 'pit', 'stuck', 'escape'] },
   { action: 'attack', description: 'Use bot.attack against a nearby hostile mob selected by bot.nearestEntity.', tags: ['attack', 'fight', 'danger', 'hostile', 'mob', 'threat', 'defend'] },
-  { action: 'mine', description: 'Use bot.canDigBlock and bot.dig on a validated block.', tags: ['mine', 'dig'] },
+  {
+    action: 'mine',
+    description: 'Equip a suitable tool, then use bot.canDigBlock and bot.dig on a validated block.',
+    tags: ['mine', 'dig'],
+    preconditions: ['target is loaded', 'target is reachable', 'block is diggable'],
+    targetKinds: ['block'],
+    failureCodes: ['DIG_OUT_OF_REACH', 'DIG_UNBREAKABLE', 'DIG_FAILED', 'ACTION_TIMEOUT'],
+    recoveryActions: ['move', 'jump', 'collect', 'craft'],
+  },
   { action: 'collect', description: 'Use bot.collectBlock to find, pathfind to, mine, and collect a nearby resource block.', tags: ['collect', 'gather', 'resource', 'wood', 'ore', 'stone', 'logs'] },
   { action: 'eat', description: 'Use bot.consume on the currently held food item.', tags: ['eat', 'food', 'hunger', 'starving'] },
   { action: 'craft', description: 'Use bot.recipesFor and bot.craft for a needed inventory item.', tags: ['craft', 'make', 'tool', 'recipe'] },
@@ -31,5 +43,8 @@ export function inferRelevantCapabilities(text: string): readonly Action[] {
   const matched = CAPABILITIES
     .filter(({ tags }) => tags.some((tag) => normalized.includes(tag)))
     .map(({ action }) => action);
+  if (/escape|mine|open ground|daylight|farm|wheat/.test(normalized)) {
+    matched.push('move', 'jump', 'mine', 'collect', 'craft');
+  }
   return matched.length > 0 ? Array.from(new Set<Action>([...matched, 'idle'])) : ACTIONS;
 }

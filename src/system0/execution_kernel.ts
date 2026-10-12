@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { Action, Intent, IntentTarget } from '../core/types.js';
+import type { Action, ActionResult, Intent, IntentTarget } from '../core/types.js';
 import { Vec3 } from 'vec3';
 import type { Recipe } from 'prismarine-recipe';
 import pathfinderModule from 'mineflayer-pathfinder';
@@ -22,12 +22,13 @@ export class ExecutionKernel {
     private readonly bot: Bot,
     private readonly onError?: (error: unknown) => void,
     private readonly event?: (type: string, data?: Record<string, unknown>) => void,
+    private readonly onResult?: (result: ActionResult) => void,
   ) {
     this.handlers = {
       move: (intent) => this.move(intent),
       jump: () => this.jump(),
       attack: (intent) => { if (intent.target) this.attack(intent.target); },
-      mine: (intent) => { if (intent.target?.kind === 'block') this.dig(intent.target.type); },
+      mine: (intent) => { if (intent.target?.kind === 'block') this.dig(intent.target); },
       collect: (intent) => { if (intent.target?.kind === 'collect') void this.collect(intent.target); },
       eat: () => this.eat(),
       craft: (intent) => { if (intent.target?.kind === 'craft') void this.craft(intent.target.item); },
@@ -56,6 +57,14 @@ export class ExecutionKernel {
         this.onError?.(new Error('Mineflayer pathfinder plugin is not loaded'));
         return;
       }
+      const stand = this.bot.blockAt?.(new Vec3(target.x, target.y, target.z));
+      const support = this.bot.blockAt?.(new Vec3(target.x, target.y - 1, target.z));
+      const head = this.bot.blockAt?.(new Vec3(target.x, target.y + 1, target.z));
+      if (stand && support && head &&
+        (stand.boundingBox === 'block' || support.boundingBox !== 'block' || head.boundingBox === 'block')) {
+        this.event?.('system0.navigation.rejected', { reason: 'target-not-standable', target });
+        return;
+      }
 
       this.bot.pathfinder.setGoal(new goals.GoalNear(target.x, target.y, target.z, target.range ?? 1));
     } catch (error) {
@@ -69,8 +78,10 @@ export class ExecutionKernel {
     this.rescuing = true;
     this.bot.pathfinder?.stop();
     this.bot.clearControlStates();
+    this.bot.setControlState('forward', true);
     this.bot.setControlState('jump', true);
     this.rescueTimer = setTimeout(() => {
+      this.bot.setControlState('forward', false);
       this.bot.setControlState('jump', false);
       if (target && this.bot.pathfinder) {
         this.bot.pathfinder.setGoal(new goals.GoalNear(target.x, target.y, target.z, 1));
@@ -84,8 +95,10 @@ export class ExecutionKernel {
   public jump(): void {
     if (this.jumping) return;
     this.jumping = true;
+    this.bot.setControlState('forward', true);
     this.bot.setControlState('jump', true);
     this.jumpTimer = setTimeout(() => {
+      this.bot.setControlState('forward', false);
       this.bot.setControlState('jump', false);
       this.jumping = false;
       this.jumpTimer = undefined;
@@ -99,13 +112,36 @@ export class ExecutionKernel {
     if (entity) this.bot.attack(entity);
   }
 
-  public dig(blockId: number): void {
+  public dig(target: Extract<IntentTarget, { kind: 'block' }>): void {
     if (this.digging) return;
-    const block = this.bot.blockAt(this.bot.entity.position.offset(0, -1, 0));
-    if (!block || block.type !== blockId || !this.bot.canDigBlock(block)) return;
+    const position = target.x !== undefined && target.y !== undefined && target.z !== undefined
+      ? new Vec3(target.x, target.y, target.z)
+      : this.bot.entity.position.offset(0, -1, 0);
+    const block = this.bot.blockAt(position);
+    if (!block || block.type !== target.type) {
+      this.report({ action: 'mine', ok: false, errorCode: 'DIG_TARGET_CHANGED', retryable: true, target });
+      return;
+    }
+    if (!this.bot.canDigBlock(block)) {
+      this.report({ action: 'mine', ok: false, errorCode: 'DIG_UNBREAKABLE', retryable: false, target });
+      return;
+    }
+    this.bot.pathfinder?.stop();
+    this.bot.clearControlStates?.();
     this.digging = true;
-    void this.bot.dig(block).then(() => this.event?.('system0.dig.completed', { blockId }))
-      .catch((error) => this.onError?.(error)).finally(() => { this.digging = false; });
+    const tool = (this.bot as Bot & { tool?: { equipForBlock: (value: unknown) => Promise<void> } }).tool;
+    const operation = tool
+      ? tool.equipForBlock(block).then(() => this.bot.dig(block, true))
+      : this.bot.dig(block, true);
+    void this.withTimeout(operation, 15000)
+      .then(() => {
+        this.event?.('system0.dig.completed', { blockId: target.type });
+        this.report({ action: 'mine', ok: true, target });
+      })
+      .catch((error) => {
+        this.onError?.(error);
+        this.report({ action: 'mine', ok: false, errorCode: error instanceof Error && error.message === 'ACTION_TIMEOUT' ? 'ACTION_TIMEOUT' : 'DIG_FAILED', message: error instanceof Error ? error.message : String(error), retryable: true, target });
+      }).finally(() => { this.digging = false; });
   }
 
   public eat(): void {
@@ -119,7 +155,7 @@ export class ExecutionKernel {
     if (!item) return;
     this.crafting = true;
     try {
-      for (const recipe of this.craftPlan(item.id, 6, new Set<number>())) await this.bot.craft(recipe, 1, undefined);
+      for (const recipe of this.craftPlan(item.id, 6, new Set<number>()))       await this.withTimeout(this.bot.craft(recipe, 1, undefined), 15000);
     } catch (error) {
       this.onError?.(error);
     } finally {
@@ -133,17 +169,24 @@ export class ExecutionKernel {
       matching: (candidate) => target.names.includes(candidate.name),
       maxDistance: target.maxDistance,
     });
-    if (!block) return;
+    if (!block) {
+      this.report({ action: 'collect', ok: false, errorCode: 'RESOURCE_NOT_FOUND', retryable: true, target });
+      return;
+    }
     if (!this.bot.collectBlock) {
-      this.onError?.(new Error('Mineflayer collectblock plugin is not loaded'));
+      const error = new Error('Mineflayer collectblock plugin is not loaded');
+      this.onError?.(error);
+      this.report({ action: 'collect', ok: false, errorCode: 'MISSING_PLUGIN', message: error.message, retryable: false, target });
       return;
     }
     this.collecting = true;
     try {
-      await this.bot.collectBlock.collect(block);
+      await this.withTimeout(this.bot.collectBlock.collect(block), 60000);
       this.event?.('system0.collect.completed', { block: block.name });
+      this.report({ action: 'collect', ok: true, target });
     } catch (error) {
       this.onError?.(error);
+      this.report({ action: 'collect', ok: false, errorCode: error instanceof Error && error.message === 'ACTION_TIMEOUT' ? 'ACTION_TIMEOUT' : 'COLLECT_FAILED', message: error instanceof Error ? error.message : String(error), retryable: true, target });
     } finally {
       this.collecting = false;
     }
@@ -234,5 +277,24 @@ export class ExecutionKernel {
 
   public execute(intent: Intent): void {
     this.handlers[intent.action](intent);
+  }
+
+  private report(result: Omit<ActionResult, 'completedAt'>): void {
+    this.onResult?.({ ...result, completedAt: Date.now() });
+  }
+
+  private async withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('ACTION_TIMEOUT')), timeoutMs);
+          timer.unref();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 }

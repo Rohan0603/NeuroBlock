@@ -16,9 +16,24 @@ import { join } from 'node:path';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { ACTIONS, inferRelevantCapabilities } from '../src/core/capabilities.js';
+import { chooseSurvivalAction } from '../src/system1/survival_policy.js';
+import { configuredWorldIdentity, parseLocraw } from '../src/core/world_identity.js';
+import { TaskController } from '../src/core/task_controller.js';
+
+test('world identity parses locraw and falls back to local configuration', () => {
+  assert.deepEqual(parseLocraw('{"server":"mini1","gametype":"BEDWARS","lobbyname":"BW Lobby 1","map":"Orchestra"}'), {
+    server: 'mini1', gametype: 'BEDWARS', lobbyName: 'BW Lobby 1', map: 'Orchestra', source: 'locraw',
+  });
+  assert.equal(parseLocraw('not-json'), undefined);
+  assert.deepEqual(configuredWorldIdentity({ WORLD_SERVER: 'paper-dev', WORLD_GAMETYPE: 'survival', WORLD_MAP: 'world' }), {
+    server: 'paper-dev', gametype: 'survival', map: 'world', source: 'config',
+  });
+});
 
 test('firewall accepts only the strict intent shape', () => {
   assert.deepEqual(validateLLMIntent({ action: 'move', state_version: 2 }), { action: 'move', state_version: 2 });
+  assert.deepEqual(validateLLMIntent({ action: 'move', targetHint: { kind: 'direction', direction: 'south', distance: 3 }, state_version: 2 }), { action: 'move', targetHint: { kind: 'direction', direction: 'south', distance: 3 }, state_version: 2 });
+  assert.deepEqual(validateLLMIntent({ action: 'move', candidateId: 'east-2-1', state_version: 2 }), { action: 'move', candidateId: 'east-2-1', state_version: 2 });
   assert.equal(validateLLMIntent({ action: 'move', state_version: 2, extra: true }), null);
   assert.equal(validateLLMIntent({ action: 'fly', state_version: 2 }), null);
   assert.equal(validateLLMIntent({ action: 'place', state_version: 2, target: '{}' }), null);
@@ -27,12 +42,57 @@ test('firewall accepts only the strict intent shape', () => {
 
 test('capability registry narrows relevant actions and preserves safe fallback', async () => {
   assert.deepEqual(inferRelevantCapabilities('Attack the nearby zombie'), ['attack', 'idle']);
+  assert.deepEqual(inferRelevantCapabilities('Escape the mine and build a wheat farm'), ['jump', 'mine', 'eat', 'place', 'flee', 'move', 'collect', 'craft', 'idle']);
   assert.deepEqual(inferRelevantCapabilities('Locate a village'), ACTIONS);
 
   const strategy = new StrategicLoop(async () => 'Gather wood', 60_000);
   await strategy.run();
   assert.deepEqual(strategy.latest?.relevantCapabilities, ['collect', 'idle']);
   assert.deepEqual(strategy.latest?.objective, { kind: 'collect', text: 'Gather wood', constraints: [] });
+});
+
+test('strategic loop accepts only bounded structured task plans', async () => {
+  const strategy = new StrategicLoop(async () => JSON.stringify({
+    objective: 'escape',
+    steps: [{ step: 'escape', purpose: 'Reach clear open ground' }],
+  }), 60_000);
+  await strategy.run();
+  assert.deepEqual(strategy.latest?.plan, {
+    objective: 'escape',
+    steps: [{ step: 'escape', purpose: 'Reach clear open ground' }],
+  });
+
+  const invalid = new StrategicLoop(async () => '{"objective":"escape","steps":[{"step":"fly","purpose":"unsafe"}]}', 60_000);
+  await invalid.run();
+  assert.equal(invalid.latest?.plan, undefined);
+});
+
+test('System 1 survival policy sequences escape and farm preparation from primitive state', () => {
+  const escapeState = JSON.stringify({
+    objective: { steps: ['escape', 'gather', 'farm'] },
+    escapeDigCount: 0,
+    world: { onGround: true },
+    surroundings: [{ solid: true }],
+  });
+  assert.equal(chooseSurvivalAction(escapeState, undefined, ACTIONS), 'mine');
+  assert.equal(chooseSurvivalAction(JSON.stringify({
+    objective: { steps: ['escape', 'gather', 'farm'] },
+    world: { safeOpenGround: true },
+    checkpoint: { name: 'gather_seeds' },
+  }), undefined, ACTIONS), 'collect');
+  assert.equal(chooseSurvivalAction(JSON.stringify({
+    objective: { steps: ['escape', 'gather', 'farm'] },
+    escapeDigCount: 3,
+    world: { onGround: true },
+    surroundings: [],
+  }), undefined, ACTIONS), 'move');
+  assert.equal(chooseSurvivalAction(JSON.stringify({
+    objective: { steps: ['escape', 'gather', 'farm'] },
+    escapeDigCount: 12,
+    navigation: { lastFault: 'noPath' },
+  }), undefined, ACTIONS), 'jump');
+  assert.equal(chooseSurvivalAction(JSON.stringify({ checkpoint: { name: 'gather_seeds' } }), undefined, ACTIONS), 'collect');
+  assert.equal(chooseSurvivalAction(JSON.stringify({ checkpoint: { name: 'craft_hoe' } }), undefined, ACTIONS), 'craft');
 });
 
 test('circuit breaker opens after three failures and permits a later probe', () => {
@@ -90,6 +150,18 @@ test('goal store replaces and clears human goals', () => {
   assert.throws(() => goals.set(' '));
 });
 
+test('task controller exposes bounded completion and failure states', () => {
+  const tasks = new TaskController();
+  assert.equal(tasks.start('Escape the pit', 1, 'escape', 1000).status, 'active');
+  assert.equal(tasks.checkDeadline(1000)?.step, 'escape');
+  assert.equal(tasks.complete(2000)?.status, 'complete');
+  assert.equal(tasks.complete(3000)?.completedAt, 2000);
+
+  tasks.start('Escape again', 2, 'escape', 1000);
+  assert.equal(tasks.checkDeadline(121001)?.failure, 'task deadline exceeded');
+  assert.equal(tasks.current?.status, 'failed');
+});
+
 test('System 0 delegates movement to Mineflayer pathfinder once per target', () => {
   const goals: unknown[] = [];
   const bot = {
@@ -107,6 +179,39 @@ test('System 0 delegates movement to Mineflayer pathfinder once per target', () 
   kernel.execute(intent);
 
   assert.equal(goals.length, 1);
+});
+
+test('System 0 rejects loaded overhead blocks as Pathfinder stand targets', () => {
+  const goals: unknown[] = [];
+  const blocks = new Map([
+    ['0,64,0', { boundingBox: 'block' }],
+    ['0,65,0', { boundingBox: 'block' }],
+    ['0,66,0', { boundingBox: 'block' }],
+  ]);
+  const bot = {
+    entity: { position: { x: 0, y: 64, z: 0 } },
+    blockAt: (position: { x: number; y: number; z: number }) => blocks.get(`${position.x},${position.y},${position.z}`),
+    pathfinder: { setGoal: (goal: unknown) => goals.push(goal) },
+  } as unknown as Bot;
+  const kernel = new ExecutionKernel(bot);
+  kernel.execute({
+    action: 'move',
+    state_version: 0,
+    target: { kind: 'near', x: 0, y: 65, z: 0 },
+  });
+  assert.equal(goals.length, 0);
+});
+
+test('System 0 jump pulse moves forward while jumping', () => {
+  const calls: string[] = [];
+  const bot = {
+    setControlState: (control: string, value: boolean) => calls.push(`${control}:${value}`),
+    clearControlStates: () => {},
+  } as unknown as Bot;
+  const kernel = new ExecutionKernel(bot);
+  kernel.execute({ action: 'jump', state_version: 0 });
+  assert.deepEqual(calls.slice(0, 2), ['forward:true', 'jump:true']);
+  kernel.execute({ action: 'idle', state_version: 0 });
 });
 
 test('System 0 cancels an in-flight dig via bot.stopDigging() on idle fail-safe', async () => {
@@ -129,6 +234,44 @@ test('System 0 cancels an in-flight dig via bot.stopDigging() on idle fail-safe'
   assert.equal(stopped, true);
 
   resolveDig?.();
+});
+
+test('System 0 digs a validated Mineflayer block target', async () => {
+  let dug: unknown;
+  const block = { type: 7 };
+  const bot = {
+    blockAt: () => block,
+    canDigBlock: () => true,
+    dig: async (value: unknown) => { dug = value; },
+    entity: { position: { offset: () => ({}) } },
+  } as unknown as Bot;
+  new ExecutionKernel(bot).execute({
+    action: 'mine',
+    state_version: 0,
+    target: { kind: 'block', type: 7, x: 1, y: 63, z: 2 },
+  });
+  await Promise.resolve();
+  assert.equal(dug, block);
+});
+
+test('System 0 equips optional tool plugin and reports dig result', async () => {
+  let equipped = false;
+  let result: { ok: boolean; action: string } | undefined;
+  const block = { type: 7, position: new Vec3(1, 63, 2) };
+  const bot = {
+    blockAt: () => block,
+    canDigBlock: () => true,
+    tool: { equipForBlock: async () => { equipped = true; } },
+    dig: async () => {},
+  } as unknown as Bot;
+  new ExecutionKernel(bot, undefined, undefined, (value) => { result = value; }).execute({
+    action: 'mine',
+    state_version: 0,
+    target: { kind: 'block', type: 7, x: 1, y: 63, z: 2 },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(equipped, true);
+  assert.deepEqual(result && { ok: result.ok, action: result.action }, { ok: true, action: 'mine' });
 });
 
 test('System 0 delegates resource collection to mineflayer-collectblock', async () => {

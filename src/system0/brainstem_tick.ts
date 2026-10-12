@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import type { IntentEpoch } from '../core/types.js';
+import type { ActionResult, IntentEpoch } from '../core/types.js';
 import { ExecutionKernel } from './execution_kernel.js';
 import { SafetyFSM } from './safety_fsm.js';
 
@@ -15,10 +15,15 @@ export class BrainstemTick {
   private lastSafety: string | undefined;
   private lastAction: string | undefined;
 
-  public constructor(private readonly bot: Bot, private readonly source: IntentSource, private readonly event?: BrainstemEvent) {
+  public constructor(
+    private readonly bot: Bot,
+    private readonly source: IntentSource,
+    private readonly event?: BrainstemEvent,
+    onResult?: (result: ActionResult) => void,
+  ) {
     this.kernel = new ExecutionKernel(bot, (error) => this.event?.('system0.error', {
       error: error instanceof Error ? error.message : String(error),
-    }), this.event);
+    }), this.event, onResult);
   }
 
   public start(): void {

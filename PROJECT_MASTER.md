@@ -14,18 +14,52 @@ VoxelCortex is a Minecraft agent that combines:
 - OpenCode Zen System 2 for slower strategic interpretation.
 - Mineflayer for Minecraft control.
 - Navigation uses the official `mineflayer-pathfinder` plugin with native `Movements` and goals.
-- Embedded terrain recovery is observation-driven: runtime checks feet/head occupancy, searches native safe stands, and System 0 owns bounded jump/replan mutation.
+- Embedded terrain recovery is observation-driven: runtime checks feet/head occupancy, searches native safe stands, and System 0 owns bounded digging, jump, and replan mutation.
 - Navigation stalls trigger one bounded System 1 recovery decision with primitive world and surrounding-block data; System 0 still owns execution.
 - Survival movement uses native Pathfinder jumps and vine climbing, with parkour,
   free motion, sprinting, and pillaring disabled; drops are limited to two
   blocks.
 - Pathfinder search uses native 16-block, 250 ms think, and 10 ms tick bounds
   to prevent runaway route computation.
+- Pathfinder may dig during route planning (`Movements.canDig = true`) to
+  reach goals through obstructed terrain. Direct System 1 mining still routes
+  through System 0.
 - System 0 keeps one active `GoalNear` request at a time and accepts replacement only after Pathfinder stops or fails.
+- `GoalNear` receives stand coordinates only. Escape obstruction coordinates
+  remain Mineflayer dig targets and require arrival at a validated adjacent
+  stand first.
 - System 1 may select bounded `jump` from primitive local terrain data; System 0 owns the 350 ms jump pulse.
+- Native dig and collect operations report bounded primitive action results with
+  error codes and retryability; repeated failures for one target pause runtime.
+- Escape mining resolves only native `canDigBlock` targets and delegates final
+  aiming to `bot.dig(block, true)` inside System 0.
+- When Pathfinder reports `noPath`, System 1 permits at most 12 bounded escape
+  digs. Runtime selects the cardinal direction with greatest two-block
+  clearance and mines its first reachable obstruction before retrying movement.
+- Escape recovery checks upward blocks first and mines a bounded vertical shaft;
+  horizontal Pathfinder recovery alone cannot leave an enclosed mine.
+- Farm goals expose deterministic checkpoints, and runtime keeps at most eight
+  primitive named locations. These records never contain Mineflayer objects.
+- Runtime exposes `worldIdentity` from local configuration by default and can
+  parse `/locraw` responses when `WORLD_IDENTITY_MODE=locraw`.
+- Farm directives may include ordered primitive steps (`escape`, `gather`,
+  `farm`); System 1 chooses one validated action for current step.
+- System 2 may return a bounded TypeBox/Ajv-validated task plan. TaskController
+  tracks one active step, deadline, retry count, and observable completion.
+- First task completion target is escape to safe open ground. Provider text
+  never counts as completion.
+- System 1 survival policy uses objective steps, primitive terrain, surrounding
+  solids, on-ground state, escape progress, and checkpoint state before Jev
+  fallback. It never calls Mineflayer.
+- System 0 jump and embedded rescue pulses combine bounded `forward` and
+  `jump`, then clear both controls, following the tested Mineflayer tutorial
+  movement pattern without exposing direct controls to System 1.
 - Runtime does not launch exploratory movement until a human goal exists.
 - Prismarine Viewer for local browser observation.
 - A localhost goal API and CLI for human direction.
+- Home goals use a deterministic 24-block shelter plan anchored on verified
+  safe ground. Native collectblock, craft, pathfinder, and placeBlock execute
+  the plan; `home.progress` and `home.verified` telemetry prove completion.
 
 The design principle is:
 
@@ -92,11 +126,13 @@ Responsibilities:
 - Run safety checks on the 20Hz path.
 - Reject stale intents.
 - Fall back to idle when unsafe or when no valid intent exists.
-- Be the only layer allowed to mutate Mineflayer state.
+- Be the only layer allowed to execute direct Mineflayer mutations. Pathfinder
+  is the approved navigation exception when `Movements.canDig = true`.
 - Clear controls for idle and lifecycle failure. Only valid route ascents may
   request a bounded jump pulse. Also cancels an in-flight dig via
   `bot.stopDigging()` so mining never continues past an unsafe/idle transition.
-- Submit typed goals to `mineflayer-pathfinder`; plugin owns movement planning.
+- Submit typed goals to `mineflayer-pathfinder`; plugin owns movement planning
+  and may dig route obstructions under its configured movement rules.
 
 Hard boundary: no provider network calls, heavy parsing, or plugin waits in
 the brainstem tick.
@@ -120,6 +156,13 @@ capabilities. It chooses one action from the validated set:
 During navigation recovery, System 1 receives primitive terrain cells,
 feet/head blocks, entities, inventory, and navigation state. It can select
 bounded `jump`; System 0 owns the jump pulse and replanning.
+Navigation state includes absolute goals plus relative terrain coordinates,
+goal delta, distance, vertical distance, and cardinal direction.
+- Jev may provide only a validated cardinal direction hint with distance
+  limited to 1-8. Runtime resolves it locally; System 0 still validates the
+  resulting absolute target.
+- Escape completion requires solid support, clear feet/head blocks, and eight
+  clear blocks above the bot. System 1 receives this primitive state.
 
 System 2 adds data-only `relevantCapabilities` names and a typed
 `StrategicObjective` to its directive. Jev receives that narrowed action menu
@@ -127,9 +170,25 @@ when the directive provides a clear match; otherwise it receives the full
 validated menu. Neither provider calls Mineflayer. System 0 still owns every
 Mineflayer mutation.
 
-The live Jev adapter uses the TypeSafe SDK and is asynchronous. Strict generic
-deadline enforcement is not currently active; add it with tests before
-claiming that guarantee.
+The live Jev adapter uses the TypeSafe SDK and is asynchronous. Jev runs only
+when deterministic System 1 policy has no answer; deterministic survival
+actions do not spend a provider request. Jev rejects action answers below
+0.6 confidence and falls back to local behavior. Runtime abandons a Jev
+request after 600 ms and falls back locally. Pin `JEV_MODEL` to a version when
+reproducible behavior matters.
+Runtime decision cycles are single-flight; the 750 ms cadence skips a new
+provider request while the previous request is still pending.
+Status and telemetry expose Jev usage, timeout, unavailable, low-confidence,
+action-applied, and action-changed counters so Jev value can be measured before
+keeping it long term.
+Collect goals use an 8-block search radius; farm goals target grass/tall grass
+for seed gathering instead of sending collectblock toward nearby stone or ore.
+Build and farm goals require `safeOpenGround` before gathering, crafting, or
+placement; `safeOpenGround` requires 16 blocks of vertical clearance and
+sky light of at least 4, so underground goals enter bounded escape excavation.
+Navigation targets prefer the highest nearby `safeOpenGround` stand. If no
+surface stand is loaded, runtime targets a point eight blocks above the bot so
+Pathfinder can excavate upward with route digging enabled.
 
 ### System 2 — strategy
 
@@ -271,8 +330,8 @@ code.
 - The local server is intentionally offline/insecure and is for development
   only.
 - No remote authenticated control plane exists. Local control remains loopback-only.
-- Village/shelter semantic completion is not implemented. Live validation proves
-  sustained safe navigation progress, not goal completion.
+- Only pit escape has an initial completion predicate. Village, shelter, farm,
+  and combat semantic completion remain unimplemented.
 - Current local world position has no walkable route in the loaded 16³ grid.
   Navigation safely pauses with `Navigation: no-route`; move the bot to
   traversable terrain before live progress validation.
@@ -286,7 +345,17 @@ when it is verified.
 
 ### Pending implementation order
 
-VC-015, VC-007, VC-008, VC-009, VC-010, VC-011, VC-012, VC-014, VC-016,
-VC-018, VC-019, VC-020, VC-021, and VC-022 are complete. VC-013 remains
-blocked by the remote-control approval gate. Do not claim strict provider
-deadline guarantees without active enforcement and tests.
+The complete task ledger is in [`TODO.md`](./TODO.md). Current major
+blocks as of 2026-10-02:
+
+- **VC-013** - Authenticated remote control design (BLOCKED by owner)
+- **VC-017** - Recover terrain-aware navigation (BLOCKED)
+- **VC-025** - Validate live tower placement (BLOCKED)
+- **VC-026** - Live support selection verification (BLOCKED)
+- **VC-027** - Embedded-block rescue verification (VERIFY)
+- **VC-029** - Native survival movement confirmation (VERIFY)
+- **VC-031** - Single-flight navigation confirmation (VERIFY)
+
+This work gate ensures explicit task validation before claiming
+delivery. Remote control remains a non-goal. All other implementation
+is complete.

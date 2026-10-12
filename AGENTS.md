@@ -1,132 +1,94 @@
-# Agent Operating Instructions
+# Agent Operating Instructions — NeuroBlock
 
-These instructions make VoxelCortex safe for hands-off agentic development.
-They apply to coding agents working in this repository.
+## Project identity
+- **Repository**: NeuroBlock (not VoxelCortex; VoxelCortex is the runtime name)
+- **Runtime name**: VoxelCortex
+- **Status**: Local active-agent development
 
-## Required agent skills
-
-Use installed `ponytail` skill during every development task. Apply its
-YAGNI-first coding ladder, deletion preference, stdlib/native preference,
-smallest-diff rule, and validation requirement. Do not add abstractions,
-scaffolding, dependencies, or configuration without acceptance evidence.
-
-Use installed `caveman` skill during every development task and response.
-Keep output terse while preserving technical detail, exact commands, errors,
-warnings, and required documentation. Use normal clarity for security,
-irreversible actions, and ambiguous multi-step instructions.
+## Critical architecture boundaries
+- **System 0** (`src/system0/execution_kernel.ts`) is the **sole** layer allowed to call Mineflayer mutation methods. No other code path — not System 1, not System 2, not plugins — may execute direct Mineflayer calls.
+- System 0 must **not** perform network I/O, JSON parsing, heavy computation, or plugin waits on its critical 20Hz path.
+- Human goals enter System 2 → System 1 emits validated intents → System 0 decides safe execution.
+- Pathfinder and collectblock own navigation internals; application code passes only validated primitive targets into System 0.
+- **Use TypeBox/Ajv for network intent validation; do not introduce Zod here.**
 
 ## Start every task
-
-1. Read [`PROJECT_MASTER.md`](./PROJECT_MASTER.md).
-2. Read [`TODO.md`](./TODO.md).
-3. Inspect the relevant source, tests, configuration, and existing changes.
-4. Identify the task ID or add one before editing.
-5. State the observable acceptance condition internally before implementation.
+1. Read `TODO.md` for the durable task ledger.
+2. Read `PROJECT_MASTER.md` for architecture and runtime state.
+3. Inspect relevant source, tests, and configuration.
+4. State the observable acceptance condition internally before implementation.
 
 ## Work protocol
-
 1. Prefer the smallest complete change that crosses every required layer.
 2. Preserve the System 0/System 1/System 2 ownership model.
 3. Reuse existing types, adapters, validators, and lifecycle helpers.
-4. Do not add providers, databases, frameworks, or configuration modes unless
-   acceptance requires them.
+4. Do not add providers, databases, frameworks, or configuration modes unless acceptance requires them.
 5. Keep changes narrow; do not rewrite unrelated code or formatting.
 6. Update directly related documentation and the task ledger.
-7. After every implementation, update every relevant project document in the
-   same change. At minimum update [`TODO.md`](./TODO.md); when behavior,
-   architecture, commands, configuration, invariants, limitations, or
-   operations change, also update [`PROJECT_MASTER.md`](./PROJECT_MASTER.md),
-   [`README.md`](./README.md), `.env.example`, and any applicable tests or
-   source documentation. Documentation updates must not be deferred.
+7. After every implementation, update `TODO.md`; when behavior, architecture, commands, configuration, invariants, limitations, or operations change, also update `PROJECT_MASTER.md` and this file.
 
-## Architecture rules
+## Exact developer commands (from package.json)
+- `npm install` — install dependencies
+- `npm run typecheck` — `tsc --noEmit -p tsconfig.json` (minimum gate)
+- `npm run build` — `tsc -p tsconfig.json`
+- `npm test` — `node --test --import tsx test/contracts.test.ts` (31 contract tests only; no live server needed)
+- `npm run goal -- set "..."` — set a human goal via CLI
+- `npm run goal -- status` — inspect current goal
+- `npm run goal -- clear` — clear the human goal
+- `npm run dev:viewer` — starts local Paper + browser viewer + agent runtime
+- `npm run diagnose:jev` — verify Jev client configuration
+- `npm run diagnose:opencode` — verify OpenCode client configuration
+- `npm run probe:opencode-free` — probe free OpenCode model availability
+- `npm run audit:20hz` — 20Hz allocation and latency audit
 
-- Only [`src/system0/execution_kernel.ts`](./src/system0/execution_kernel.ts)
-  may call Mineflayer mutation methods.
-- System 0 must not perform network I/O, JSON parsing, heavy computation, or
-  plugin waits on its critical path.
-- Human goals enter System 2. System 2 emits strategy. System 1 emits
-  validated intents. System 0 decides whether execution is safe.
-- Pathfinder and collectblock own navigation internals; application code passes
-  only validated primitive targets into System 0.
-- Use TypeBox/Ajv for network intent validation; do not introduce Zod here.
-- Keep provider keys in `.env`; never print, commit, or paste them into logs.
-- The local Paper server must stay loopback/offline-only for development.
-- Any new direct action endpoint requires an explicit security review and
-  approval; goal input is the preferred control boundary.
+**Minimum gate for every code change**:
+1. `npm run typecheck`
+2. `npm test`
+3. `npm run build`
 
-## Failure handling
+## Repository structure (key entrypoints)
+- `src/index.ts` — re-exports all public APIs
+- `src/system0/execution_kernel.ts` — **sole Mineflayer mutation boundary**; see tests for expected behavior
+- `src/system1/firewall.ts` — `validateLLMIntent()` guards every inbound LLM action
+- `src/system1/jev_client.ts` — TypeSafe SDK Jev client; MIN_ACTION_CONFIDENCE = 0.6
+- `src/system2/strategic_loop.ts` — produces `StrategicObjective` directives
+- `src/runtime/agent_runtime.ts` — composes providers, goal store, brainstem, control API
+- `src/core/capabilities.ts` — single source of truth for validated actions and Mineflayer semantics
+- `src/core/types.ts` — TypeBox/Ajv schemas, Action, Intent, IntentTarget, AgentStatus
+- `src/control/control_server.ts` — HTTP control API (loopback only); never exposes direct action endpoints
+- `test/contracts.test.ts` — 31 tests using fake Mineflayer bots; no live Paper required
 
-- Surface errors with useful provider/module context.
-- Do not use broad catches that make failed work look successful.
-- Preserve circuit breakers, single-flight behavior, deadlines, and stale
-  response rejection.
-- If a provider is unavailable, use a deterministic fake for tests and report
-  the live integration limitation; do not weaken safety to keep moving.
-- Stop and mark `BLOCKED` when a requested change contradicts ownership,
-  safety, security, or the task acceptance criteria.
+## Environment
+- Copy `.env.example` to `.env`; **never commit `.env`** (contains TYPESAFE_API_KEY, JEV_API_URL, JEV_MODEL, OPENCODE_API_URL, OPENCODE_API_KEY, OPENCODE_MODEL).
+- `.env` is read via `env-file-if-exists` in package.json scripts.
+- Minecraft: `localhost:25565`, Paper 1.21.11 only; `online-mode=false`, development only.
+- Control API binds to `127.0.0.1` by default; no remote access.
 
-## Validation protocol
+## Testing quirks
+- All 31 tests in `test/contracts.test.ts` use **fake Mineflayer bots** — no live Paper or Minecraft server needed.
+- Tests cover: firewall validation, capability registry, strategic loop, circuit breaker, ring buffer, telemetry parsing, OpenCode Zen client, goal store, task controller, System 0 execution (move, jump, dig, collect, place, flee, drop, equip, sleep, activate), control API boundaries, goal-to-action flow, attack fallback to `bot.nearestEntity`, and more.
+- Tests assert specific error codes: `DIG_TARGET_CHANGED`, `DIG_UNBREAKABLE`, `ACTION_TIMEOUT`, `DIG_FAILED`, `MISSING_PLUGIN`.
+- Runtime decision cycles are **single-flight**: 750ms cadence skips a new provider request while previous is pending.
+- `chooseSurvivalAction()` in `survival_policy.ts` sequences escape → gather → farm → jump based on primitive state only.
 
-Run the smallest relevant checks while iterating, then run the full required
-gate before completion:
-
-```powershell
-npm run typecheck
-npm test
-npm run build
-```
-
-For runtime/provider changes also run:
-
-```powershell
-npm run diagnose:jev
-npm run diagnose:opencode
-npm run dev:viewer
-```
-
-For the live viewer, verify:
-
-- Mineflayer reaches `spawn`.
-- `http://localhost:3000` returns HTTP 200.
-- `http://127.0.0.1:8787/status` reports the connected runtime.
-- Shutdown leaves no unexpected control or bot process.
-
-## Task completion protocol
-
-Before declaring a task complete:
-
-1. Confirm every acceptance condition.
-2. Review the diff for unrelated changes and secret leakage.
-3. Update [`TODO.md`](./TODO.md) to `DONE`, `VERIFY`, or `BLOCKED`.
-4. Update every relevant project document before reporting completion; do not
-   leave documentation updates as a follow-up task.
-5. Record validation commands and material limitations.
-6. Update [`PROJECT_MASTER.md`](./PROJECT_MASTER.md) if architecture,
-   commands, invariants, or known limitations changed.
-7. Report changed files, tests, documentation updates, and remaining work
-   concisely.
-
-## Commit protocol
-
-Use Conventional Commits when commits are requested. Use configured user Git
-identity as commit author. Do not add Copilot name, email, or co-author trailer.
-Do not impersonate a different human identity or alter Git identity settings.
-
-Never commit `.env`, API keys, server credentials, or generated secrets.
+## Important constraints
+- **Never commit `.env`, API keys, server credentials, or generated secrets.**
+- **Local control binds to loopback unless an explicit security design is added.** The control API at `127.0.0.1:8787` never exposes direct action endpoints — only `/goal`, `/pause`, `/resume`, `/emergency-stop`, `/status`, `/telemetry`.
+- **System 0 jump pulse is bounded**: 350ms forward+jump, then controls cleared. System 1 must not issue unbounded jump requests.
+- **Escape completion requires solid support, clear feet/head blocks, and eight clear blocks above the bot.** System 1 receives this primitive state but System 0 owns execution.
+- **Provider calls never execute inside the 20Hz tick.** Strict provider deadline enforcement is unimplemented; runtime abandons a Jev request after 600ms and falls back locally.
+- **LLM responses are validated and stale responses are discarded.** Provider messages contain primitive serializable data only — never Mineflayer objects.
+- **Errors are observable; do not silently convert failures into success.** Mineflayer death, kick, end, or error enters safe idle/emergency stop and remains visible in status and telemetry.
+- **Only pit escape has an initial completion predicate.** Village, shelter, farm, and combat semantic completion remain unimplemented.
+- **Current local world position has no walkable route in the loaded 16³ grid.** Navigation safely pauses with `Navigation: no-route`; move the bot to traversable terrain before live progress validation.
+- **Capability registry** (`inferRelevantCapabilities()`) drives firewall, Jev criteria, System 2 data-only hints, narrowed Jev action menus, and System 0 dispatch. It is the single source of truth.
 
 ## Safe stop conditions
-
 Stop and ask for direction only when:
-
 - The owner must choose between materially different architectures.
 - The change would expose the control API remotely.
 - A destructive world/data operation is requested.
-- Required external credentials or an undocumented provider contract are
-  unavailable and cannot be safely mocked.
-- Existing evidence contradicts the requested behavior in a way that changes
-  security or ownership.
+- Required external credentials or an undocumented provider contract are unavailable and cannot be safely mocked.
+- Existing evidence contradicts the requested behavior in a way that changes security or ownership.
 
-Routine implementation errors, type errors, test failures, and provider
-diagnostic failures should be investigated and fixed autonomously when the
-approved architecture remains intact.
+Routine implementation errors, type errors, test failures, and provider diagnostic failures should be investigated and fixed autonomously when the approved architecture remains intact.

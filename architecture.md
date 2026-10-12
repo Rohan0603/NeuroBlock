@@ -6,7 +6,7 @@ VoxelCortex is a local-first Minecraft agent. Human goals enter a controlled
 planning path:
 
 ```text
-Human goal -> System 2 directive -> System 1 intent -> System 0 safety -> Mineflayer
+Human goal -> System 2 plan -> task state -> System 1 intent -> execution gate -> Mineflayer plugins
 ```
 
 Human input never becomes a direct Minecraft action.
@@ -19,7 +19,7 @@ Human input never becomes a direct Minecraft action.
 [`src/system2/opencode_client.ts`](./src/system2/opencode_client.ts)
 
 - Reads the current human goal and primitive observations.
-- Uses OpenCode Zen to produce one concise strategic directive, then maps it to a typed `StrategicObjective`.
+- Uses OpenCode Zen to produce a bounded JSON task plan, then maps it to a typed `StrategicObjective`.
 - Refreshes on startup, goal changes, and its configured slow interval.
 - Does not call Mineflayer or mutate world state.
 
@@ -34,6 +34,7 @@ Human input never becomes a direct Minecraft action.
 - Validates action shape with TypeBox/Ajv.
 - Produces an `Intent` with a state version.
 - Runs asynchronously outside the 20Hz safety path.
+- Runs only when deterministic task policy has no answer.
 
 Allowed actions ([`src/core/capabilities.ts`](./src/core/capabilities.ts) is
 the single source of truth for this list, the firewall schema, and Jev's
@@ -56,10 +57,22 @@ invokes an action.
 - Runs the 20Hz safety tick.
 - Rejects stale intents and unsafe bot state.
 - Falls back to `idle` when no safe intent exists.
-- Owns the only allowed Mineflayer mutation boundary.
+- Authorizes high-level operations and owns direct application mutations.
 
-Only `ExecutionKernel` may call Mineflayer mutation methods such as movement,
-attack, dig, consume, craft, or control-state clearing.
+Pathfinder and collectblock own their internal movement and collection
+mutations. ExecutionKernel does not replace plugin internals.
+
+Native dig and collect operations emit bounded primitive `ActionResult`
+records. Runtime exposes latest result to System 1. Repeated failures for one
+target pause runtime. Farm goals expose deterministic checkpoints, and runtime
+keeps a small bounded named-location set. No provider or database is added.
+
+### Task state
+
+`TaskController` tracks one bounded task with a current step, retry count,
+deadline, completion result, or explicit failure. The first verified task is
+escaping to safe open ground. Completion comes from Mineflayer world
+observation, not provider text.
 
 ## Runtime composition
 
@@ -67,6 +80,7 @@ attack, dig, consume, craft, or control-state clearing.
 Mineflayer emits `spawn`. It owns:
 
 - `GoalStore` for the current human goal.
+- `TaskController` for current step and completion state.
 - `StrategicLoop` for System 2.
 - Jev provider for System 1.
 - `BrainstemTick` and `ExecutionKernel` for System 0.
@@ -82,7 +96,7 @@ Default control host: `127.0.0.1`.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /status` | Read runtime, goal, lifecycle, path, and error state |
+| `GET /status` | Read runtime, goal, task, lifecycle, path, and error state |
 | `POST /goal` | Set one bounded human goal |
 | `DELETE /goal` | Clear current goal |
 | `POST /pause` | Pause decisions and idle the bot |
@@ -102,7 +116,14 @@ Control API exposes goals and lifecycle operations only. It binds to loopback an
 - Detects solid feet/head occupancy on `physicsTick`, searches for a two-block-clear stand, and requests bounded rescue/replanning through System 0.
 - On Pathfinder stalls, sends System 1 current primitive world, entity,
   inventory, navigation, and surrounding-block data with all recovery actions
-  enabled, including bounded `jump`.
+  enabled, including bounded `jump` and native nearby-block `mine`.
+- Escape recovery exposes locally verified candidate IDs to Jev. Runtime
+  resolves and revalidates the selected stand candidate before sending
+  absolute coordinates to Pathfinder. Obstruction coordinates never enter
+  `GoalNear`; System 0 mines them only after the bot reaches the stand.
+- Loaded `GoalNear` coordinates are rejected unless they have solid support,
+  clear feet, and clear head space. Unloaded coordinates remain Pathfinder's
+  responsibility after local validation cannot inspect them.
 - Clears the active goal through the System 0 idle fail-safe.
 
 ## Data and safety invariants
@@ -159,22 +180,37 @@ deterministic fakes.
 
 ## Current pending work
 
+The complete task ledger is in [`TODO.md`](./TODO.md). Active
+verification and blocked items:
+
 | ID | Status | Work |
 |---|---|---|
-| VC-010 | DONE | JSONL telemetry export and `/telemetry` count endpoint |
-| VC-012 | DONE | 1000-sample 20Hz p95 audit; current run 0.002 ms |
 | VC-013 | BLOCKED | Authenticated remote control; deferred by owner, loopback-only control remains |
-| VC-014 | DONE | Bounded recursive recipe prerequisite planning |
-| VC-016 | DONE | Validated block placement through System 0 |
-| VC-025 | BLOCKED | Live tower placement remains unverified after Pathfinder stalls |
-| VC-026 | BLOCKED | Live support selection still rejected by local server |
+| VC-017 | BLOCKED | Terrain-aware navigation recovery; no walkable route in loaded grid |
+| VC-025 | BLOCKED | Live tower placement unverified after Pathfinder stalls |
+| VC-026 | BLOCKED | Live support selection rejected by local server |
 | VC-027 | VERIFY | Embedded-block rescue awaits live Paper confirmation |
 | VC-029 | VERIFY | Native survival movement awaits live movement confirmation |
 | VC-031 | VERIFY | Single-flight navigation awaits bounded-memory live confirmation |
-| VC-034 | VERIFY | Pit escape context exists; visual live escape remains unconfirmed |
+| VC-034 | VERIFY | Pit escape context exists; visual live escape unconfirmed |
+| VC-038 | VERIFY | Context-sensitive capability registry live validation |
+| VC-040 | VERIFY | Bounded native action results and recovery feedback |
+| VC-042 | VERIFY | Ordered farm steps with escape priority |
+| VC-045 | VERIFY | Policy-selected survival phase actions |
+| VC-047 | VERIFY | Relative navigation observation context |
+| VC-049 | VERIFY | Bounded recursive recipe planning |
+| VC-050 | VERIFY | Bounded Jev direction hints |
+| VC-051 | VERIFY | Dig validated obstructions during embedded recovery |
+| VC-053 | VERIFY | Escape underground before farm work |
+| VC-054 | VERIFY | Named world identity via `/locraw` |
+| VC-055 | VERIFY | Pathfinder route digging enabled |
+| VC-056 | VERIFY | Jev movement resolved toward surface |
+| VC-057 | VERIFY | Jev narrowed to ambiguous decisions |
+| VC-058 | BLOCKED | Bounded task state and observable escape completion |
+| VC-059 | BLOCKED | Build and telemetry-verify grounded home goal |
 
-Do not claim provider deadline or 20Hz performance guarantees until measured
-enforcement and audit evidence exist.
+Do not claim provider deadline or 20Hz performance guarantees until
+measured enforcement and audit evidence exist.
 
 Home and farm goals now include `place` capability. Construction remains
 bounded by the provider's decisions and available inventory; no unbounded

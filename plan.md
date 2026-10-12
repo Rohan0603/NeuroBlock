@@ -1,177 +1,104 @@
-```markdown
-# Project VoxelCortex — Implementation Master Plan
+# VoxelCortex Implementation Plan
 
-**Target Audience:** Agentic AI Developer (GitHub Copilot, Cursor, Claude)
-**Role:** Principal Node.js Game Server Architect
-**Objective:** Build a real-time, 3-tier cognitive Minecraft agent using `mineflayer` and an ultra-low latency LLM provider. 
+## Target
 
-**Prime Directive:** **The Node.js event loop is sacred.** Pathfinding, LLM network requests, and heavy JSON parsing must NEVER block the main 20Hz (50ms) physics tick. The LLM is an asynchronous, unreliable advisor, not a synchronous controller.
-
-> Historical plan. Custom worker A* navigation was replaced by
-> `mineflayer-pathfinder`; typed targets and `mineflayer-collectblock` now
-> define current navigation and collection behavior.
-
----
-
-## 1. Architecture & Directory Structure
-
-The system is strictly divided into 4 domains. **Do not bleed logic between these domains.**
+Build one real Mineflayer task agent:
 
 ```text
-src/
-├── core/
-│   ├── perf_monitor.ts       (perf_hooks event loop tracker)
-│   └── types.ts              (Shared interfaces, IntentEpoch, GridSnapshot)
-├── system0/                  (BRAINSTEM - Synchronous, 20Hz)
-│   ├── execution_kernel.ts   (Exclusive wrapper for bot actions)
-│   ├── safety_fsm.ts         (Lava/Fall/Hostile reactive logic)
-│   └── brainstem_tick.ts     (Main 50ms interval loop)
-├── system1/                  (CEREBELLUM - Asynchronous, Network)
-│   ├── llm_client.ts         (Single-flight fetch, deadlines)
-│   ├── circuit_breaker.ts    (Closed, Open, Half-Open states)
-│   └── firewall.ts           (TypeBox + Ajv compiled schema)
-└── workers/                  (HEAVY COMPUTE - Thread Pool)
-    ├── grid_extractor.ts     (Main thread: bot -> Uint16Array)
-    ├── worker_manager.ts     (Thread lifecycle & postMessage)
-    └── pathfinder.worker.ts  (Offloaded A* and Context Compression)
-
+human goal
+  -> validated LLM plan
+  -> deterministic task state
+  -> Jev only when tactical choice is unclear
+  -> Mineflayer plugin operation
+  -> observed result
+  -> success or failure
 ```
 
----
+Mineflayer and its plugins own world interaction. System 0 authorizes
+high-level operations and handles safety. It does not replace plugin internals.
 
-## 2. Hard Engineering Constraints (AI Developer: Strictly Enforce These)
+## Delivery order
 
-1. **Zero-Avoidable Allocations in System 0:** The 20Hz tick (`brainstem_tick.ts`) must not use `new`, `Array.map`, `JSON.parse`, or `JSON.stringify`. Depend on pre-allocated buffers and primitive state checks.
-2. **Worker Isolation:** **NEVER** pass `bot`, `Block`, `Entity`, or `Vec3` objects to `worker_threads`. Extract block IDs to a flat `Uint16Array` and use `ArrayBuffer` transfer lists to ensure zero-copy memory overhead.
-3. **LLM is Disposable (Strict Deadlines):** A request has a 350ms soft deadline and a 500ms hard E2E deadline. If the LLM takes 501ms, the response is dropped silently.
-4. **No Zod for Network Boundaries:** Use `@sinclair/typebox` and `ajv` to compile the JSON schema once at startup. Zod is banned in `system1/firewall.ts` to guarantee sub-millisecond execution.
-5. **Execution Kernel Monopoly:** Only `ExecutionKernel` is allowed to call `bot.setControlState`, `bot.attack`, etc. System 1 only produces `Intent` JSON. System 0 verifies and executes.
+### 1. Freeze scope
 
----
+Keep Mineflayer, Pathfinder, collectblock, LLM planning, Jev fallback,
+loopback control, and telemetry. Freeze new capabilities, recovery heuristics,
+remote control, multi-goal planning, combat intelligence, and broad autonomy.
 
-## 3. Phase 1: System 0 (The Brainstem) & Diagnostics
+### 2. Add task state
 
-**Goal:** Establish the main event loop, execution boundary, and performance monitoring.
+Track one bounded task with:
 
-### 3.1. Performance Monitor (`src/core/perf_monitor.ts`)
+- goal
+- current step
+- attempt count
+- start and deadline
+- explicit failure
+- completion result
 
-* Implement `monitorEventLoopDelay({ resolution: 1 })` and `performance.eventLoopUtilization()`.
-* Log p50, p95, p99, max delay, and ELU every 1000ms.
-* **Threshold:** If p95 event loop delay > 10ms, log a critical warning.
+Supported steps:
 
-### 3.2. The Execution Kernel (`src/system0/execution_kernel.ts`)
-
-* Create an `ExecutionKernel` class that receives the `mineflayer.Bot` instance.
-* Expose strictly typed methods: `move(intent)`, `attack(targetId)`, `dig(blockId)`, `eat()`.
-* This is the *only* file allowed to import and call `mineflayer` mutation methods.
-
-### 3.3. Brainstem Tick (`src/system0/brainstem_tick.ts`)
-
-* Hook into `bot.on('physicsTick')` or run `setInterval` exactly every 50ms (20Hz).
-* **Flow:**
-1. Run `SafetyFSM` (check health, nearby hazards).
-2. Read the latest `IntentEpoch` from System 1.
-3. Run `isCurrent(epoch)` to ensure the LLM response isn't stale (check `stateVersion` and `requestId`).
-4. Pass valid intents to `ExecutionKernel`.
-
-
-
----
-
-## 4. Phase 2: System 1 (The LLM Firewall & Network)
-
-**Goal:** Safely request, receive, and validate AI commands without crashing or blocking.
-
-### 4.1. Compiled Firewall (`src/system1/firewall.ts`)
-
-* Define `IntentSchema` using `@sinclair/typebox`:
-```typescript
-const IntentSchema = Type.Object({
-  action: Type.Union([Type.Literal('move'), Type.Literal('attack'), Type.Literal('mine'), Type.Literal('idle')]),
-  target: Type.Optional(Type.String()),
-  state_version: Type.Integer({ minimum: 0 }),
-}, { additionalProperties: false });
-
+```text
+escape | navigate | gather | craft | build | verify | complete | failed
 ```
 
+Expose task state through `/status` and telemetry.
 
-* Initialize `Ajv` and compile the schema *outside* the request handler (on startup).
-* Export `validateLLMIntent(json): Intent | null`.
+### 3. Prove one live task
 
-### 4.2. Single-Flight LLM Client (`src/system1/llm_client.ts`)
+First task: escape a pit and reach safe open ground.
 
-* Implement `let inflight = false` to guarantee only one network request occurs at a time.
-* Implement `THINK_INTERVAL = 250ms` (cooldown between requests).
-* **Deadline Logic:**
-```typescript
-const deadline = performance.now() + 350;
-const response = await fetch(LLM_URL, { ..., signal: AbortSignal.timeout(350) });
-const json = await response.json();
-if (performance.now() > deadline) return null; // Drop stale
+Success requires solid support, clear feet/head blocks, required vertical
+clearance, and stable observation. Failure requires timeout, retry exhaustion,
+disconnect, death, or repeated action failure.
 
+### 4. Structure System 2
+
+Replace free-form directive interpretation with a small TypeBox/Ajv-validated
+task plan. LLM proposes supported steps. Runtime rejects unknown or malformed
+plans.
+
+### 5. Keep Jev tactical
+
+Deterministic policy runs first. Jev runs only when no deterministic action
+exists. Validate action and target output. Provider failure produces safe
+fallback or task failure, never success.
+
+### 6. Clarify execution boundary
+
+System 0 validates and authorizes high-level operations. Pathfinder and
+collectblock perform their internal mutations. Plugin results return to task
+state.
+
+### 7. Reduce runtime only after behavior works
+
+Move only task state, transitions, and completion predicates out of
+`AgentRuntime`. Do not create a general workflow framework.
+
+### 8. Add second task
+
+Only after live escape succeeds:
+
+```text
+navigate -> collect -> verify inventory -> complete
 ```
 
+Use collectblock. Add crafting only after gathering completes reliably.
 
+## Definition of done
 
-### 4.3. Circuit Breaker (`src/system1/circuit_breaker.ts`)
+- One task completes live.
+- One task fails safely.
+- Completion comes from world evidence.
+- LLM plans steps but cannot execute directly.
+- Jev is optional tactical fallback.
+- Mineflayer plugins perform world operations.
+- System 0 gates operations without replacing plugins.
+- `/status` reports step, result, failure, and completion.
+- Tests cover task transitions and completion predicates.
+- Live validation is recorded in `TODO.md`.
 
-* Implement states: `CLOSED` -> `OPEN` (after 3 consecutive fetch/parse failures) -> `HALF_OPEN` (probe after 5 seconds).
-* If `OPEN`, System 1 returns `null` instantly, forcing System 0 to rely purely on `SafetyFSM` (Turtle Mode).
+## Explicit non-goals
 
----
-
-## 5. Phase 3: The Worker Boundary (Data Flattening)
-
-**Goal:** Offload spatial grid analysis and A* pathfinding to avoid blocking the 20Hz tick.
-
-### 5.1. Grid Extractor (`src/workers/grid_extractor.ts`)
-
-* Write `extractLocalGrid(bot, radius=8): GridSnapshot`.
-* Iterate through the local 16x16x16 volume using `bot.blockAt()`.
-* Write primitive block IDs to a pre-allocated `Uint16Array(4096)`.
-* **Must Not** allocate new arrays during iteration.
-
-### 5.2. Worker Manager (`src/workers/worker_manager.ts`)
-
-* Instantiate `new Worker('./pathfinder.worker.js')`.
-* Pass the flattened data using zero-copy transfer:
-```typescript
-worker.postMessage({ blocks: blocks.buffer, ...meta }, [blocks.buffer]);
-
-```
-
-
-
-### 5.3. Worker Script (`src/workers/pathfinder.worker.ts`)
-
-* Receive the `ArrayBuffer`, reconstruct the `Uint16Array`.
-* Perform grid compression/stringification for the LLM context prompt here.
-* Perform custom A* pathfinding. Return a simple array of `Vec3` primitives back to the main thread.
-
----
-
-## 6. Phase 4: Telemetry & System 2 (Strategy)
-
-### 6.1. Decoupled Telemetry
-
-* Implement a `RingBuffer` in System 0 to store the last 10 ticks of state.
-* Create a separate `setInterval` running at **5Hz (200ms)** that stringifies the buffer (`JSON.stringify` initially) and broadcasts via WebSocket.
-
-### 6.2. System 2 (Pre-Frontal Cortex)
-
-* A slow, 30-60 second async loop.
-* Maintains long-term inventory goals (e.g., "Need Iron").
-* Injects high-level directives into the System 1 prompt context (e.g., `Strategic Directive: Find a cave to mine iron`).
-
----
-
-## Execution Instructions for AI Assistant
-
-1. **Read all constraints thoroughly.** If you attempt to pass a Mineflayer `Block` to a worker thread or use Zod in the System 1 tick, the architecture fails.
-2. Assume Node.js v22+ environment.
-3. Start by scaffolding the project and implementing **Phase 1** (Core System 0 and `perf_hooks`).
-4. **Pause and await user review** after completing each phase before proceeding to the next.
-
-```
-
-```
+No generic planner, behavior tree, custom pathfinding, vector database,
+multi-agent coordination, remote control, or “do anything” mode.

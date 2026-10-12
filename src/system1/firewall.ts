@@ -8,7 +8,13 @@ export const IntentSchema = Type.Object({
   target: Type.Optional(Type.Union([
     Type.Object({ kind: Type.Literal('near'), x: Type.Number(), y: Type.Number(), z: Type.Number(), range: Type.Optional(Type.Number({ minimum: 0 })) }, { additionalProperties: false }),
     Type.Object({ kind: Type.Literal('entity'), id: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
-    Type.Object({ kind: Type.Literal('block'), type: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+    Type.Object({
+      kind: Type.Literal('block'),
+      type: Type.Integer({ minimum: 0 }),
+      x: Type.Optional(Type.Integer()),
+      y: Type.Optional(Type.Integer()),
+      z: Type.Optional(Type.Integer()),
+    }, { additionalProperties: false }),
     Type.Object({ kind: Type.Literal('collect'), names: Type.Array(Type.String(), { minItems: 1 }), maxDistance: Type.Number({ minimum: 0 }) }, { additionalProperties: false }),
     Type.Object({ kind: Type.Literal('item'), name: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
     Type.Object({ kind: Type.Literal('craft'), item: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
@@ -16,6 +22,12 @@ export const IntentSchema = Type.Object({
     Type.Object({ kind: Type.Literal('activate'), x: Type.Number(), y: Type.Number(), z: Type.Number() }, { additionalProperties: false }),
     Type.Object({ kind: Type.Literal('place'), block: Type.String({ minLength: 1 }), reference: Type.Object({ x: Type.Number(), y: Type.Number(), z: Type.Number() }), face: Type.Object({ x: Type.Number(), y: Type.Number(), z: Type.Number() }) }, { additionalProperties: false }),
   ])),
+  targetHint: Type.Optional(Type.Object({
+    kind: Type.Literal('direction'),
+    direction: Type.Union(['north', 'south', 'east', 'west'].map((value) => Type.Literal(value))),
+    distance: Type.Number({ minimum: 1, maximum: 8 }),
+  }, { additionalProperties: false })),
+  candidateId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   state_version: Type.Integer({ minimum: 0 }),
 }, { additionalProperties: false });
 

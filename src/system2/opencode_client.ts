@@ -41,11 +41,11 @@ export class OpenCodeZenClient {
       headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify(this.endpoint.endsWith('/chat/completions')
         ? { model: this.model, messages: [
-          { role: 'system', content: 'Return one concise strategic directive for the Minecraft agent. Do not execute tools.' },
+          { role: 'system', content: 'Return JSON only: {"objective":"short goal","steps":[{"step":"escape|navigate|gather|craft|build|verify","purpose":"short reason"}]}. Do not execute tools.' },
           { role: 'user', content: state },
         ], max_tokens: 160 }
         : { model: this.model, input: [
-          { role: 'system', content: 'Return one concise strategic directive for the Minecraft agent. Do not execute tools.' },
+          { role: 'system', content: 'Return JSON only: {"objective":"short goal","steps":[{"step":"escape|navigate|gather|craft|build|verify","purpose":"short reason"}]}. Do not execute tools.' },
           { role: 'user', content: state },
         ], max_output_tokens: 160 }),
       signal: AbortSignal.timeout(this.timeoutMs),
