@@ -103,4 +103,11 @@ Stop and ask for direction only when:
 - Fix any failures found during validation, then merge the PR back into main.
 - Never merge a major change directly to main without passing through a validated PR.
 
+## Session lifecycle
+
+- When a worker's task is complete and verified, clean it up promptly. Never leave a finished session sitting idle.
+- Use ao session cleanup to reclaim terminated workspaces, and ao session kill for any session still running with nothing left to do.
+- Move every task to an appropriate terminal state: COMPLETED when done and verified; BLOCKED when it cannot proceed, always with a stated blocking reason; IN_REVIEW when a PR is open awaiting checks; MERGED when the PR has landed.
+- Report status by classifying every session explicitly as completed, in progress, or blocked. Never present an idle session as active work.
+
 Routine implementation errors, type errors, test failures, and provider diagnostic failures should be investigated and fixed autonomously when the approved architecture remains intact.
