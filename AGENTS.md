@@ -1,5 +1,10 @@
 # Agent Operating Instructions — NeuroBlock
 
+## Required agent skills
+- Use the installed ponytail skill for every development task, at level FULL. Apply its YAGNI-first ladder, deletion preference, stdlib/native preference, smallest-diff rule, and validation requirement. No unrequested abstractions, scaffolding, dependencies, or configuration.
+- Use the installed caveman skill for every development task and every response, at level ULTRA. Terse output that still preserves technical detail, exact commands, errors, warnings, and required documentation.
+- Both skills stay active for the whole session and every task in it. Use normal clarity for security, irreversible actions, and ambiguous multi-step instructions.
+
 ## Project identity
 - **Repository**: NeuroBlock (not VoxelCortex; VoxelCortex is the runtime name)
 - **Runtime name**: VoxelCortex
