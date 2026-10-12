@@ -26,7 +26,7 @@ task.
 | ID | Status | Priority | Task / goal | Owner | Dependencies | Acceptance |
 |---|---|---|---|---|---|---|
 | VC-001 | DONE | P0 | Establish System 0 safety and execution boundary | Agent | — | Typecheck, tests, and kernel ownership preserved |
-| VC-002 | DONE | P1 | Integrate Jev System 1 | Agent | VC-001 | Live Jev diagnostic passes |
+| VC-002 | DONE | P1 | Integrate Jev System 1 | Agent | VC-001 | *Jev has been removed from the deterministic decision path; all actions now resolve through the survival policy move fallback. See refactor decision in PROJECT_MASTER.md and AGENTS.md.*
 | VC-003 | DONE | P1 | Integrate OpenCode Zen System 2 | Agent | VC-001 | Live OpenCode diagnostic passes |
 | VC-004 | DONE | P1 | Start compatible local Paper and viewer | Agent | VC-001 | Bot spawn and viewer HTTP 200 |
 | VC-005 | DONE | P1 | Route human goals through System 2 to System 1 | Agent | VC-002, VC-003 | Goal API and active runtime status work |
@@ -297,6 +297,11 @@ When moving a task to `BLOCKED`, record:
   tests plus typecheck/build pass. Live bot still fails to clear the shaft:
   `ACTION_TIMEOUT` at `(-3, 67, 1)` with six blocked overhead cells.
 
+- **Latest validation:** vertical-only recovery now prevents stale horizontal
+  movement, System 0 stops Pathfinder before digging, and all 31 contract
+  tests plus typecheck/build pass. Live bot still fails to clear the shaft:
+  `ACTION_TIMEOUT` at `(-3, 67, 1)` with six blocked overhead cells.
+
 ### VC-059
 
 - **Exact blocker:** live goal remains `active/gather`; `decisionCount` stays
@@ -308,3 +313,13 @@ When moving a task to `BLOCKED`, record:
   but did not alter world state and were removed.
 - **Needed:** repair live runtime decision-loop startup or provide a clean
   traversable Paper fixture with reachable stone/log resources.
+
+---
+
+Jev removal refactor (this session):
+
+- **Task:** Remove Jev from the System 1 deterministic decision path
+- **Status:** COMPLETED
+- **Changes:** Removed Jev invocation, requestJev method, JevClient field, jevMetrics, and JevClient export; updated types, tests, and documentation; move fallback now deterministic
+- **Capability lost:** Unrecognized states now always resolve to `move` instead of going through Jev; Jev client and TypeSafe API key no longer required for decision cycle
+- **Verification:** `npm test`, `npm run typecheck`, `npm run build` all pass

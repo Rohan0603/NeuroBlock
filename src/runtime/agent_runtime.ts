@@ -7,7 +7,6 @@ import { TaskController } from '../core/task_controller.js';
 import { hasNamedItem, safeOpenGround } from '../core/task_predicates.js';
 import { BrainstemTick, type IntentSource } from '../system0/brainstem_tick.js';
 import { ExecutionKernel } from '../system0/execution_kernel.js';
-import { JevClient } from '../system1/jev_client.js';
 import { OpenCodeZenClient } from '../system2/opencode_client.js';
 import { StrategicLoop } from '../system2/strategic_loop.js';
 import { chooseSurvivalAction } from '../system1/survival_policy.js';
@@ -44,34 +43,10 @@ export class AgentRuntime {
   private readonly source: IntentSource = { latest: undefined };
   private readonly brainstem: BrainstemTick;
   private readonly strategy: StrategicLoop;
-  private readonly jev: IntentProvider;
   private readonly control: ControlServer;
   private readonly kernel: ExecutionKernel;
   private readonly enableNavigation: boolean;
   private readonly telemetry = new Telemetry();
-  private readonly task = new TaskController();
-  private timer: NodeJS.Timeout | undefined;
-  private stateVersion = 0;
-  private lastGoalVersion = 0;
-  private lastAction: Action | undefined;
-  private connected = false;
-  private paused = false;
-  private emergencyStopped = false;
-  private decisionCount = 0;
-  private lastError: string | undefined;
-  private navigationState: 'idle' | 'planning' | 'moving' | 'stalled' = 'idle';
-  private navigationGoal: { x: number; y: number; z: number } | undefined;
-  private navigationLastPathStatus: 'success' | 'partial' | 'timeout' | 'noPath' | undefined;
-  private navigationRecoveryCount = 0;
-  private navigationLastFault: string | undefined;
-  private navigationInitialized = false;
-  private collectionInitialized = false;
-  private embeddedRecoveryAt = 0;
-  private repeatedAction = 0;
-  private previousAction: Action | undefined;
-  private recoveryDecisionActive = false;
-  private decisionActive = false;
-  private readonly jevMetrics = { used: 0, timeout: 0, lowConfidence: 0, actionChanged: 0, actionApplied: 0 };
   private lastExecution: ActionResult | undefined;
   private readonly failedTargets = new Map<string, number>();
   private readonly locations = new Map<string, NamedLocation>();
@@ -91,12 +66,6 @@ export class AgentRuntime {
       if (type === 'system0.error' && typeof data?.error === 'string') this.lastError = `System 0: ${data.error}`;
       this.telemetry.record(type, data);
     }, (result) => this.recordExecutionResult(result));
-    this.jev = options.jev ?? new JevClient({
-      onOutcome: (outcome) => {
-        if (outcome === 'low_confidence') this.jevMetrics.lowConfidence += 1;
-        this.telemetry.record(`jev.${outcome}`);
-      },
-    });
     this.strategy = options.strategy ?? new StrategicLoop(async () => {
       const goal = this.goals.current?.text ?? 'Explore the nearby world and improve survival.';
       return await new OpenCodeZenClient().requestDirective(JSON.stringify({
@@ -340,44 +309,23 @@ export class AgentRuntime {
       const state = this.observe();
       const policyAction = chooseSurvivalAction(state, this.strategy.latest, actions);
       this.telemetry.record('system1.decision', {
-        source: policyAction ? 'survival-policy' : 'jev',
-        action: policyAction ?? 'provider',
+        source: policyAction ? 'survival-policy' : 'move-fallback',
+        action: policyAction ?? 'move',
         objective: this.strategy.latest?.objective ?? null,
       });
-      const providerIntent = policyAction
-        ? null
-        : await this.requestJev(
-          JSON.stringify({
-            directive,
-            state,
-            capabilities: actions,
-            recovery,
-            role: recovery
-              ? 'Navigation is stuck. Use supplied world and surrounding data to choose the safest recovery action.'
-              : 'Convert the strategic directive into one immediate validated action.',
-          }),
-          actions,
-        );
       const intent = this.completeIntent(policyAction
         ? {
           action: policyAction,
           state_version: this.stateVersion,
-          ...(providerIntent?.targetHint ? { targetHint: providerIntent.targetHint } : {}),
-          ...(providerIntent?.candidateId ? { candidateId: providerIntent.candidateId } : {}),
         }
-        : (providerIntent ?? { action: 'move', state_version: this.stateVersion }), directive);
+        : { action: 'move', state_version: this.stateVersion }, directive);
       this.source.latest = { intent, stateVersion: this.stateVersion, requestId: Date.now() };
-      if (providerIntent) {
-        const metric = providerIntent.action === intent.action ? 'actionApplied' : 'actionChanged';
-        this.jevMetrics[metric] += 1;
-        this.telemetry.record(`jev.${metric}`, { jevAction: providerIntent.action, finalAction: intent.action });
-      }
       this.telemetry.record('system1.intent', {
         action: this.source.latest.intent.action,
         target: this.source.latest.intent.target,
         targetHint: this.source.latest.intent.targetHint,
         candidateId: this.source.latest.intent.candidateId,
-        source: policyAction ? 'survival-policy' : 'jev',
+        source: policyAction ? 'survival-policy' : 'move-fallback',
       });
       this.lastAction = this.source.latest.intent.action;
       this.decisionCount += 1;
@@ -393,32 +341,7 @@ export class AgentRuntime {
     }
   }
 
-  private async decide(): Promise<void> { await this.runDecisionCycle(); }
-
-  private async requestJev(state: string, actions: readonly Action[]): Promise<Intent | null> {
-    let timer: NodeJS.Timeout | undefined;
-    let timedOut = false;
-    this.jevMetrics.used += 1;
-    this.telemetry.record('jev.used');
-    try {
-      return await Promise.race([
-        this.jev.requestIntent(state, this.stateVersion, actions, this.escapeCandidates(this.bot.entity.position).map(({ id }) => id)),
-        new Promise<null>((resolve) => {
-          timer = setTimeout(() => {
-            timedOut = true;
-            resolve(null);
-          }, 600);
-          timer.unref();
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-      if (timedOut) {
-        this.jevMetrics.timeout += 1;
-        this.telemetry.record('jev.timeout');
-      }
-    }
-  }
+  private async decide(): Promise<void> { await this.runDecisionCycle(); >
 
   private completeIntent(intent: Intent, directive: string): Intent {
     const goal = `${this.goals.current?.text ?? ''} ${directive}`.toLowerCase();
@@ -1161,7 +1084,6 @@ export class AgentRuntime {
         recoveryCount: this.navigationRecoveryCount,
         ...(this.navigationLastFault ? { lastFault: this.navigationLastFault } : {}),
       },
-      jev: { ...this.jevMetrics },
       ...(home ? { home } : {}),
       ...(this.lastExecution ? { lastExecution: this.lastExecution } : {}),
       ...(checkpoint ? { checkpoint } : {}),

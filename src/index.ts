@@ -7,7 +7,6 @@ export * from './system0/ring_buffer.js';
 export * from './system0/safety_fsm.js';
 export * from './system1/circuit_breaker.js';
 export * from './system1/firewall.js';
-export * from './system1/jev_client.js';
 export * from './system2/strategic_loop.js';
 export * from './system2/opencode_client.js';
 export * from './control/control_server.js';

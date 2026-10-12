@@ -423,27 +423,20 @@ test('complete goal-to-action flow crosses System 2, System 1, and System 0', as
     clearControlStates: () => { calls.push('system0:idle'); },
   } as unknown as Bot;
   const strategy = new StrategicLoop(async (goal) => { calls.push(`system2:${goal}`); return 'Locate village'; }, 60_000);
-  const jev = {
-    requestIntent: async (state: string) => {
-      calls.push(`system1:${state.includes('Locate village')}`);
-      return { action: 'move' as const, state_version: 0 };
-    },
-  };
-  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, jev, enableNavigation: false });
+  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   runtime.goals.set('Find a village');
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
     runtime.tickOnceForTest();
     assert.equal(calls.some((call) => call === 'system2:Find a village'), true);
-    assert.equal(calls.includes('system1:true'), true);
     assert.equal(runtime.status().lastAction, 'move');
   } finally {
     await runtime.stop();
   }
 });
 
-test('attack intent without a target falls back to bot.nearestEntity within reach', async () => {
+test('attack intent falls back to move when survival policy has no answer', async () => {
   const attacked: unknown[] = [];
   const zombie = { id: 42, type: 'mob', displayName: 'Zombie', position: { distanceTo: () => 3 } };
   const player = { id: 7, type: 'player', displayName: 'Steve', position: { distanceTo: () => 1 } };
@@ -458,20 +451,18 @@ test('attack intent without a target falls back to bot.nearestEntity within reac
     attack: (target: unknown) => { attacked.push(target); },
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Defend the camp', 60_000);
-  const jev = { requestIntent: async () => ({ action: 'attack' as const, state_version: 0 }) };
-  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, jev, enableNavigation: false });
+  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
     runtime.tickOnceForTest();
-    assert.equal(attacked.length, 1);
-    assert.equal(attacked[0], zombie);
+    assert.equal(runtime.status().lastAction, 'move');
   } finally {
     await runtime.stop();
   }
 });
 
-test('flee intent without a target computes an away point', async () => {
+test('flee intent falls back to move when survival policy has no answer', async () => {
   const zombie = { id: 9, type: 'mob', displayName: 'Zombie', position: new Vec3(4, 64, 0) };
   const bot = {
     health: 20, food: 20,
@@ -483,19 +474,18 @@ test('flee intent without a target computes an away point', async () => {
     nearestEntity: (match: (entity: unknown) => boolean) => [zombie].find(match) ?? null,
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Flee the zombie', 60_000);
-  const jev = { requestIntent: async () => ({ action: 'flee' as const, state_version: 0 }) };
-  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, jev, enableNavigation: false });
+  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
     runtime.tickOnceForTest();
-    assert.equal(runtime.status().lastAction, 'flee');
+    assert.equal(runtime.status().lastAction, 'move');
   } finally {
     await runtime.stop();
   }
 });
 
-test('drop intent without a target tosses a junk inventory item', async () => {
+test('drop intent falls back to move when survival policy has no answer', async () => {
   const rottenFlesh = { name: 'rotten_flesh', count: 3 };
   let tossed: unknown;
   const bot = {
@@ -508,20 +498,19 @@ test('drop intent without a target tosses a junk inventory item', async () => {
     tossStack: async (item: unknown) => { tossed = item; },
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Clean the inventory', 60_000);
-  const jev = { requestIntent: async () => ({ action: 'drop' as const, state_version: 0 }) };
-  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, jev, enableNavigation: false });
+  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
     runtime.tickOnceForTest();
     await Promise.resolve();
-    assert.equal(tossed, rottenFlesh);
+    assert.equal(runtime.status().lastAction, 'move');
   } finally {
     await runtime.stop();
   }
 });
 
-test('equip intent without a target equips an unworn armor piece to its slot', async () => {
+test('equip intent falls back to move when survival policy has no answer', async () => {
   const helmet = { name: 'iron_helmet', type: 42, count: 1 };
   let equipped: { item: number; destination: string } | undefined;
   const bot = {
@@ -534,19 +523,18 @@ test('equip intent without a target equips an unworn armor piece to its slot', a
     equip: async (item: number, destination: string) => { equipped = { item, destination }; },
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Gear up for danger', 60_000);
-  const jev = { requestIntent: async () => ({ action: 'equip' as const, state_version: 0 }) };
-  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, jev, enableNavigation: false });
+  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
     runtime.tickOnceForTest();
-    assert.deepEqual(equipped, { item: 42, destination: 'head' });
+    assert.equal(runtime.status().lastAction, 'move');
   } finally {
     await runtime.stop();
   }
 });
 
-test('activate intent without a target opens a door found via bot.findBlock', async () => {
+test('activate intent falls back to move when survival policy has no answer', async () => {
   const door = { name: 'oak_door', position: new Vec3(1, 64, 2) };
   let activated: unknown;
   const bot = {
@@ -560,14 +548,12 @@ test('activate intent without a target opens a door found via bot.findBlock', as
     activateBlock: async (block: unknown) => { activated = block; },
   } as unknown as Bot;
   const strategy = new StrategicLoop(async () => 'Open the door', 60_000);
-  const jev = { requestIntent: async () => ({ action: 'activate' as const, state_version: 0 }) };
-  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, jev, enableNavigation: false });
+  const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   await runtime.activateForTest();
   try {
     await runtime.runDecisionCycle();
     runtime.tickOnceForTest();
-    await Promise.resolve();
-    assert.equal(activated, door);
+    assert.equal(runtime.status().lastAction, 'move');
   } finally {
     await runtime.stop();
   }

@@ -130,7 +130,6 @@ export interface AgentStatus {
     readonly blockedAbove?: number;
     readonly blockedAboveAt?: readonly number[];
   };
-  readonly jev?: JevMetrics;
   readonly home?: HomeStatus;
 }
 
@@ -139,14 +138,6 @@ export interface HomeStatus {
   readonly requiredBlocks: number;
   readonly placedBlocks: number;
   readonly complete: boolean;
-}
-
-export interface JevMetrics {
-  readonly used: number;
-  readonly timeout: number;
-  readonly lowConfidence: number;
-  readonly actionChanged: number;
-  readonly actionApplied: number;
 }
 
 export interface NavigationStatus {
