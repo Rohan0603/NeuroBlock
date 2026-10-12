@@ -48,16 +48,14 @@ These commands make one real, minimal API request and return machine-readable
 JSON for an agent or CI troubleshooting step. They never print API keys.
 
 ```powershell
-npm run diagnose:jev
 npm run diagnose:opencode
 npm run probe:opencode-free
 ```
 
 Each result includes `provider`, `ok`, `latencyMs`, and an actionable `error`
-when the request fails. Jev is tested with a single legal `idle` choice;
-OpenCode Zen is tested with a concise safe-state directive request. A nonzero
-exit code means the provider is unavailable, misconfigured, or returned an
-invalid response.
+when the request fails. OpenCode Zen is tested with a concise safe-state
+directive request. A nonzero exit code means the provider is unavailable,
+misconfigured, or returned an invalid response.
 
 `probe:opencode-free` tests every documented free text model, reports each
 endpoint/status/latency, and recommends the fastest successful model. It never
@@ -138,7 +136,7 @@ Useful event types:
 - `system2.directive`: goal and selected strategic plan/directive.
 - `task.started`, `task.completed`, `task.failed`: bounded task lifecycle.
 - `system1.request`: directive sent for action selection.
-- `system1.decision`: System 1 source (`survival-policy` or `jev`) and
+- `system1.decision`: System 1 source (`survival-policy` or `move-fallback`) and
   selected action.
 - `system1.intent`: validated action and target.
 - `system0.safety`: safety result and intent freshness.
@@ -190,13 +188,8 @@ objective data while Mineflayer supplies block/entity observation and Pathfinder
 supplies route status.
 System 1 survival policy selects `mine`, `jump`, `move`, `collect`, or `craft`
 from those steps plus `escapeDigCount`, `onGround`, surrounding solid blocks,
-and current checkpoint. Jev remains fallback for actions without a deterministic
-survival rule.
-Deterministic actions do not call Jev. Jev action answers below 0.6 confidence
-fall back locally. Requests time out after 600 ms. Pin `JEV_MODEL` to a
-version for reproducible behavior.
-`/status` and `/telemetry` report Jev usage, timeouts, low-confidence answers,
-and whether Jev changed the final action.
+and current checkpoint. Deterministic actions do not call Jev. Jev has been
+removed from the decision cycle.
 Escape mining filters targets with Mineflayer `canDigBlock` and uses
 `bot.dig(block, true)` so native reach and aiming checks run at execution time.
 After `noPath`, System 1 allows at most 12 escape digs. Runtime scores the
@@ -204,10 +197,8 @@ four cardinal directions from native `blockAt` observations, clears the
 best direction, then retries Pathfinder movement.
 System 1 receives relative terrain coordinates and compact navigation
 delta/distance/direction fields. System 0 keeps absolute coordinates for final
-target validation and Mineflayer execution.
-Jev may add a validated cardinal direction hint with distance 1-8. Runtime
-resolves that hint to a local target; Jev never supplies unrestricted mutation
-coordinates.
+target validation and Mineflayer execution. Deterministic terrain handling
+uses native block observations without provider coordination.
 Escape ends only when native block queries confirm solid support, clear
 feet/head space, and eight blocks of vertical headroom.
 The external [MineflayerTutorials](../MineflayerTutorials/scripts/09-jumper-bot.mjs)
@@ -246,20 +237,15 @@ eight primitive named locations, including `spawn` and `last_safe_stand`.
 Provider credentials belong in the ignored root `.env`, copied from
 [`.env.example`](./.env.example):
 
-- **System 1 — Jev:** `TYPESAFE_API_KEY`, optional `JEV_API_URL`, and
-  `JEV_MODEL`. This uses the TypeSafe SDK's `systemOne()` and `choice()`
-  primitives for fast intent decisions. The current runtime adapter is
-  `src/system1/jev_client.ts`. Strict generic deadline enforcement is not yet
-  active; add it with tests before claiming that guarantee.
+- **System 1 — deterministic policy:** The survival policy selects actions from
+  primitive observations without provider coordination. `TYPESAFE_API_KEY` is
+  no longer required for System 1 decision flow.
 - **System 2 — OpenCode Zen:** `OPENCODE_API_URL`, `OPENCODE_API_KEY`, and
   `OPENCODE_MODEL`. This uses the documented Zen Responses API and is the
   slow strategic provider; it must only feed strategic directives into System
   1.
 
-The Jev adapter is implemented in
-[`src/system1/jev_client.ts`](C:/Users/ponna/Project/NeuroBlock/src/system1/jev_client.ts)
-using the same SDK pattern as the referenced project. The OpenCode Zen adapter
-is implemented in
+The OpenCode Zen adapter is implemented in
 [`src/system2/opencode_client.ts`](C:/Users/ponna/Project/NeuroBlock/src/system2/opencode_client.ts)
 and calls the direct Zen endpoint:
 

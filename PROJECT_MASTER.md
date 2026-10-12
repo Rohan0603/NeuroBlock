@@ -10,7 +10,6 @@
 VoxelCortex is a Minecraft agent that combines:
 
 - A synchronous System 0 safety brainstem.
-- Jev/TypeSafe System 1 for fast validated action selection.
 - OpenCode Zen System 2 for slower strategic interpretation.
 - Mineflayer for Minecraft control.
 - Navigation uses the official `mineflayer-pathfinder` plugin with native `Movements` and goals.
@@ -49,8 +48,8 @@ VoxelCortex is a Minecraft agent that combines:
 - First task completion target is escape to safe open ground. Provider text
   never counts as completion.
 - System 1 survival policy uses objective steps, primitive terrain, surrounding
-  solids, on-ground state, escape progress, and checkpoint state before Jev
-  fallback. It never calls Mineflayer.
+  solids, on-ground state, escape progress, and checkpoint state. Deterministic
+  actions do not spend a provider request. It never calls Mineflayer.
 - System 0 jump and embedded rescue pulses combine bounded `forward` and
   `jump`, then clear both controls, following the tested Mineflayer tutorial
   movement pattern without exposing direct controls to System 1.
@@ -263,8 +262,6 @@ Copy [`.env.example`](./.env.example) to `.env`. Never commit `.env`.
 ### System 1
 
 - `TYPESAFE_API_KEY`
-- `JEV_API_URL`
-- `JEV_MODEL`
 
 ### System 2
 
@@ -283,7 +280,6 @@ npm install
 npm run typecheck
 npm run build
 npm test
-npm run diagnose:jev
 npm run diagnose:opencode
 npm run probe:opencode-free
 npm run dev:viewer
@@ -306,10 +302,11 @@ code.
 3. Provider calls never execute inside the 20Hz tick.
 4. Provider messages contain primitive serializable data only.
    never Mineflayer objects.
-5. LLM responses are validated and stale responses are discarded. Strict
+5. LLM responses are validated and stale decisions are rejected. Strict
    provider deadline enforcement remains unimplemented.
 6. System 2 produces directives; System 1 produces intents; System 0 executes.
-   System 2 capability hints are data-only; System 1 never invokes Mineflayer.
+   System 1 survival policy selects actions from primitive observations; Jev is
+   no longer on the decision path. System 0 remains the only Mineflayer executor.
 7. Local control binds to loopback unless an explicit security design is added.
 8. Errors are observable; do not silently convert failures into success.
 9. Mineflayer death, kick, end, or error enters safe idle/emergency stop and
@@ -317,9 +314,6 @@ code.
 
 ## 8. Known limitations
 
-- Unwired generic LLM and configuration scaffolds were deleted under VC-015.
-  Telemetry export, performance audit, recipe planning, and placement are now
-  active.
 - The 20Hz path needs a deeper allocation/performance audit before production.
 - Crafting currently selects the first available recipe for the requested item;
   production-grade recipe planning remains future work.
@@ -335,6 +329,8 @@ code.
 - Current local world position has no walkable route in the loaded 16³ grid.
   Navigation safely pauses with `Navigation: no-route`; move the bot to
   traversable terrain before live progress validation.
+- System 1 survival policy is now fully deterministic; Jev has been removed
+  from the decision cycle. Actions always resolve to validated intents.
 
 ## 9. Agent handoff
 
@@ -354,6 +350,8 @@ blocks as of 2026-10-02:
 - **VC-026** - Live support selection verification (BLOCKED)
 - **VC-027** - Embedded-block rescue verification (VERIFY)
 - **VC-029** - Native survival movement confirmation (VERIFY)
+- **VC-031** - Single-flight navigation confirmation (VERIFY)
+- **VC-032** - Jev removed from deterministic decision path | Agent | VC-001 | *Jev removed from System 1 decision cycle; all actions now resolve through survival policy move fallback. See refactor decision.*
 - **VC-031** - Single-flight navigation confirmation (VERIFY)
 
 This work gate ensures explicit task validation before claiming

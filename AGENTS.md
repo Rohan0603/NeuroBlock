@@ -41,7 +41,6 @@
 - `npm run goal -- status` — inspect current goal
 - `npm run goal -- clear` — clear the human goal
 - `npm run dev:viewer` — starts local Paper + browser viewer + agent runtime
-- `npm run diagnose:jev` — verify Jev client configuration
 - `npm run diagnose:opencode` — verify OpenCode client configuration
 - `npm run probe:opencode-free` — probe free OpenCode model availability
 - `npm run audit:20hz` — 20Hz allocation and latency audit
@@ -55,7 +54,6 @@
 - `src/index.ts` — re-exports all public APIs
 - `src/system0/execution_kernel.ts` — **sole Mineflayer mutation boundary**; see tests for expected behavior
 - `src/system1/firewall.ts` — `validateLLMIntent()` guards every inbound LLM action
-- `src/system1/jev_client.ts` — TypeSafe SDK Jev client; MIN_ACTION_CONFIDENCE = 0.6
 - `src/system2/strategic_loop.ts` — produces `StrategicObjective` directives
 - `src/runtime/agent_runtime.ts` — composes providers, goal store, brainstem, control API
 - `src/core/capabilities.ts` — single source of truth for validated actions and Mineflayer semantics
@@ -81,12 +79,12 @@
 - **Local control binds to loopback unless an explicit security design is added.** The control API at `127.0.0.1:8787` never exposes direct action endpoints — only `/goal`, `/pause`, `/resume`, `/emergency-stop`, `/status`, `/telemetry`.
 - **System 0 jump pulse is bounded**: 350ms forward+jump, then controls cleared. System 1 must not issue unbounded jump requests.
 - **Escape completion requires solid support, clear feet/head blocks, and eight clear blocks above the bot.** System 1 receives this primitive state but System 0 owns execution.
-- **Provider calls never execute inside the 20Hz tick.** Strict provider deadline enforcement is unimplemented; runtime abandons a Jev request after 600ms and falls back locally.
+- **Provider calls never execute inside the 20Hz tick.** Strict provider deadline enforcement is unimplemented; runtime falls back locally when no deterministic action is available.
 - **LLM responses are validated and stale responses are discarded.** Provider messages contain primitive serializable data only — never Mineflayer objects.
 - **Errors are observable; do not silently convert failures into success.** Mineflayer death, kick, end, or error enters safe idle/emergency stop and remains visible in status and telemetry.
 - **Only pit escape has an initial completion predicate.** Village, shelter, farm, and combat semantic completion remain unimplemented.
 - **Current local world position has no walkable route in the loaded 16³ grid.** Navigation safely pauses with `Navigation: no-route`; move the bot to traversable terrain before live progress validation.
-- **Capability registry** (`inferRelevantCapabilities()`) drives firewall, Jev criteria, System 2 data-only hints, narrowed Jev action menus, and System 0 dispatch. It is the single source of truth.
+- **Capability registry** (`inferRelevantCapabilities()`) drives firewall, System 2 data-only hints, narrowed action menus, and System 0 dispatch. It is the single source of truth.
 
 ## Safe stop conditions
 Stop and ask for direction only when:
