@@ -58,6 +58,29 @@ export class AgentRuntime {
   private worldIdentity: WorldIdentity = configuredWorldIdentity();
   private homeAnchor: { x: number; y: number; z: number } | undefined;
   private voidRecoverySent = false;
+  private lastError: string | undefined;
+  private navigationState: 'idle' | 'planning' | 'moving' | 'stalled' = 'idle';
+  private navigationGoal: { x: number; y: number; z: number } | undefined;
+  private navigationLastPathStatus: 'success' | 'partial' | 'timeout' | 'noPath' | undefined;
+  private navigationRecoveryCount = 0;
+  private navigationLastFault: string | undefined;
+  private navigationInitialized = false;
+  private collectionInitialized = false;
+  private embeddedRecoveryAt = 0;
+  private repeatedAction = 0;
+  private previousAction: Action | undefined;
+  private recoveryDecisionActive = false;
+  private decisionActive = false;
+  private readonly task = new TaskController();
+  private stateVersion = 0;
+  private lastGoalVersion = 0;
+  private lastAction: Action | undefined;
+  private connected = false;
+  private paused = false;
+  private emergencyStopped = false;
+  private decisionCount = 0;
+  private timer: NodeJS.Timeout | undefined;
+  private readonly jevMetrics = { used: 0, timeout: 0, lowConfidence: 0, actionChanged: 0, actionApplied: 0 };
 
   public constructor(private readonly bot: Bot, options: AgentRuntimeOptions = {}) {
     this.kernel = new ExecutionKernel(bot, (error) => this.recordKernelError(error), (type, data) => this.telemetry.record(type, data));
@@ -341,7 +364,7 @@ export class AgentRuntime {
     }
   }
 
-  private async decide(): Promise<void> { await this.runDecisionCycle(); >
+  private async decide(): Promise<void> { await this.runDecisionCycle(); }
 
   private completeIntent(intent: Intent, directive: string): Intent {
     const goal = `${this.goals.current?.text ?? ''} ${directive}`.toLowerCase();
