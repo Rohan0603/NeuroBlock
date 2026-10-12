@@ -91,4 +91,11 @@ Stop and ask for direction only when:
 - Required external credentials or an undocumented provider contract are unavailable and cannot be safely mocked.
 - Existing evidence contradicts the requested behavior in a way that changes security or ownership.
 
+## Commit and PR workflow
+- After ANY change, create a distinctive commit. Distinctive means a Conventional Commit message stating the specific intent of that change, not a generic update/fix/wip.
+- After a MAJOR change — new subsystem, multi-file feature, architecture or ownership-boundary change — open a PR instead of merging directly.
+- A PR must be validated before merge: CI green, plus a local run of `npm test`, `npm run typecheck`, and `npm run build`.
+- Fix any failures found during validation, then merge the PR back into main.
+- Never merge a major change directly to main without passing through a validated PR.
+
 Routine implementation errors, type errors, test failures, and provider diagnostic failures should be investigated and fixed autonomously when the approved architecture remains intact.
