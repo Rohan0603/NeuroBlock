@@ -538,20 +538,18 @@ test('equip intent falls back to move when survival policy has no answer', async
   }
 });
 
-test('activate intent falls back to move when survival policy has no answer', async () => {
-  const door = { name: 'oak_door', position: new Vec3(1, 64, 2) };
-  let activated: unknown;
+test('flee intent falls back to move when survival policy has no answer', async () => {
+  const zombie = { id: 9, type: 'mob', displayName: 'Zombie', position: new Vec3(4, 64, 0) };
   const bot = {
     health: 20, food: 20,
     entity: { position: new Vec3(0, 64, 0) },
     entities: {}, inventory: { items: () => [] },
-    blockAt: () => door,
+    blockAt: () => ({ name: 'grass_block', type: 1 }),
     setControlState: () => {},
     clearControlStates: () => {},
-    findBlock: () => door,
-    activateBlock: async (block: unknown) => { activated = block; },
+    nearestEntity: (match: (entity: unknown) => boolean) => [zombie].find(match) ?? null,
   } as unknown as Bot;
-  const strategy = new StrategicLoop(async () => 'Open the door', 60_000);
+  const strategy = new StrategicLoop(async () => 'Flee the zombie', 60_000);
   const runtime = new AgentRuntime(bot, { controlPort: 0, strategy, enableNavigation: false });
   runtime.goals.set('Explore the nearby world');
   await runtime.activateForTest();
@@ -562,4 +560,101 @@ test('activate intent falls back to move when survival policy has no answer', as
   } finally {
     await runtime.stop();
   }
+});
+
+test('decision cycle runs with no goal set', async () => {
+  const bot = {
+    health: 20, food: 20,
+    entity: { position: { x: 0, y: 64, z: 0, offset: (x: number, y: number, z: number) => ({ x, y, z }) } },
+    entities: {}, inventory: { items: () => [] },
+    blockAt: () => ({ name: 'grass_block', type: 1 }),
+    setControlState: () => {},
+    clearControlStates: () => {},
+  } as unknown as Bot;
+  const runtime = new AgentRuntime(bot, { controlPort: 0, enableNavigation: false });
+  // No goal set - previously the if (this.goals.current) guard on the interval
+  // would skip decide() entirely. Now the decision cycle should run.
+  // Activate runtime without a goal (skip refreshStrategy since no goal).
+  ;(runtime as any).connected = true;
+  ;(runtime as any).decisionActive = false;
+  // Refresh strategy with undefined goal text - this will use the default
+  ;(runtime as any).refreshStrategy();
+  // Now run the decision cycle with no goal
+  await runtime.runDecisionCycle();
+  // Perception state should be updated (observe was called)
+  const status = runtime.status();
+  assert.ok(status.decisionCount > 0, 'decision cycle should have run even without a goal');
+  assert.ok(status.lastAction !== undefined, 'should have a last action');
+  await runtime.stop();
+});
+
+test('chooseSurvivalAction produces safe action when no goal and no escape steps', () => {
+  // State with no objective steps, no checkpoint - chooseSurvivalAction should return undefined
+  // which causes completeIntent to fall back to idle when no goal is active
+  const state = JSON.stringify({
+    directive: 'Explore and survive.',
+    objective: null,
+    health: 20,
+    food: 20,
+    position: { x: 0, y: 64, z: 0 },
+    inventory: '',
+    nearbyEntities: [],
+    world: {
+      identity: { server: 'local', gametype: 'survival', map: 'world', source: 'config' },
+      version: '1.21.11',
+      dimension: 'overworld',
+      onGround: true,
+      safeOpenGround: true,
+      yaw: 0,
+      timeOfDay: 1000,
+      heldItem: null,
+      feetBlock: null,
+      headBlock: null,
+      embedded: false,
+    },
+    navigation: {
+      state: 'idle',
+      recoveryCount: 0,
+    },
+    escapeDigCount: 0,
+    escapeCandidates: [],
+    lastExecution: null,
+    checkpoint: undefined,
+    surroundings: [],
+    terrain: [],
+    capabilities: ['move', 'jump', 'mine', 'collect', 'craft', 'place', 'flee', 'drop', 'equip', 'sleep', 'activate', 'idle'],
+  });
+  const result = chooseSurvivalAction(state, undefined, ACTIONS);
+  // Without escape steps and no checkpoint, returns undefined
+  assert.equal(result, undefined, 'chooseSurvivalAction should return undefined when no escape steps and no checkpoint');
+});
+
+test('completeIntent falls back to idle when no goal and action is move', async () => {
+  const bot = {
+    health: 20, food: 20,
+    entity: { position: { x: 0, y: 64, z: 0, offset: (x: number, y: number, z: number) => ({ x, y, z }) } },
+    entities: {}, inventory: { items: () => [] },
+    blockAt: () => ({ name: 'grass_block', type: 1 }),
+    setControlState: () => {},
+    clearControlStates: () => {},
+  } as unknown as Bot;
+  const runtime = new AgentRuntime(bot, { controlPort: 0, enableNavigation: false });
+  // Activate connected state without setting a goal (skip activateForTest
+  // which requires OpenCode API key; just manually wire what we need).
+  ;(runtime as any).connected = true;
+  ;(runtime as any).decisionActive = false;
+  ;(runtime as any).strategy.start();
+  void (runtime as any).refreshStrategy().catch(() => {});
+  // Now clear any goal - goals.current should be undefined
+  runtime.goals.clear();
+  // completeIntent with move action and no goal should return idle
+  const intent = {
+    action: 'move' as const,
+    state_version: 0,
+  };
+  const directive = 'Explore the nearby world and improve survival.';
+  const result = runtime['completeIntent'](intent, directive);
+  // When no goal is active and action is 'move', should return idle
+  assert.equal(result.action, 'idle', 'completeIntent should return idle when no goal and action is move');
+  await runtime.stop();
 });
