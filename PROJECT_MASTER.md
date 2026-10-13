@@ -331,6 +331,8 @@ code.
   traversable terrain before live progress validation.
 - System 1 survival policy is now fully deterministic; Jev has been removed
   from the decision cycle. Actions always resolve to validated intents.
+- Runtime decision cycles now execute even when no human goal is active, using
+  a default directive and the full validated action set.
 
 ## 9. Agent handoff
 

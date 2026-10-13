@@ -117,6 +117,13 @@ testable outcome.
 
 ## Completion record
 
+## Task: docs-describe-goal-independent-decision-cycle
+
+- **Status:** COMPLETED
+- **Description:** Update documentation to reflect that the 750ms decision cycle no longer requires an active goal. The cycle now runs even without a human goal, using a default directive and full action set. Documentation was updated in AGENTS.md, PROJECT_MASTER.md, and TODO.md to match the new behaviour from commit 51c5b83 (goalless-survival fix).
+- **Files changed:** AGENTS.md, PROJECT_MASTER.md, TODO.md
+- **Verification:** `npm test`, `npm run typecheck`, `npm run build` all pass (existing gates)
+
 Latest verified batch:
 
 - VC-023/024/028/030/032/033: native Pathfinder and collectblock integration,

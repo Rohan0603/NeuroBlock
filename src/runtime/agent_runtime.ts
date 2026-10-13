@@ -129,7 +129,7 @@ export class AgentRuntime {
     this.brainstem.start();
     this.strategy.start();
     void this.refreshStrategy().catch((error) => console.error('Strategic directive failed', error));
-    this.timer = setInterval(() => { if (this.goals.current) void this.decide(); }, 750);
+    this.timer = setInterval(() => { void this.decide(); }, 750);
     this.timer.unref();
     console.log('VoxelCortex active runtime control: http://127.0.0.1:8787/status');
   }
@@ -312,12 +312,12 @@ export class AgentRuntime {
   }
 
   public async runDecisionCycle(): Promise<void> {
-    const homeGoal = /build|home|shelter|house/.test(this.goals.current?.text.toLowerCase() ?? '');
+    const homeGoal = /build|home|shelter|house/.test((this.goals.current?.text ?? '').toLowerCase());
     if (!this.connected || !this.bot.entity || this.paused || this.emergencyStopped || (this.decisionActive && !homeGoal)) return;
     this.decisionActive = true;
     try {
       if (this.paused || this.emergencyStopped) return;
-      if ((this.goals.current?.version ?? 0) !== this.lastGoalVersion) await this.refreshStrategy();
+      if (this.goals.current && (this.goals.current?.version ?? 0) !== this.lastGoalVersion) await this.refreshStrategy();
       this.syncTask();
       const task = this.task.checkDeadline();
       if (task?.status === 'failed' || task?.status === 'complete') {
@@ -663,6 +663,7 @@ export class AgentRuntime {
   }
 
   private async refreshStrategy(): Promise<void> {
+    if (!this.goals.current) return;
     await this.strategy.run(this.goals.current?.text);
     this.lastGoalVersion = this.goals.current?.version ?? 0;
     this.telemetry.record('system2.directive', {
