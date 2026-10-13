@@ -313,7 +313,7 @@ export class AgentRuntime {
 
   public async runDecisionCycle(): Promise<void> {
     const homeGoal = /build|home|shelter|house/.test((this.goals.current?.text ?? '').toLowerCase());
-    if (!this.connected || !this.bot.entity || this.paused || this.emergencyStopped) return;
+    if (!this.connected || !this.bot.entity || this.paused || this.emergencyStopped || (this.decisionActive && !homeGoal)) return;
     this.decisionActive = true;
     try {
       if (this.paused || this.emergencyStopped) return;
