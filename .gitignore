@@ -4,3 +4,6 @@ dist/
 server-1.21.11/
 *.jar
 telemetry.jsonl
+*.out.log
+*.err.log
+viewer*.log
