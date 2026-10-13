@@ -71,7 +71,7 @@
 - All 31 tests in `test/contracts.test.ts` use **fake Mineflayer bots** — no live Paper or Minecraft server needed.
 - Tests cover: firewall validation, capability registry, strategic loop, circuit breaker, ring buffer, telemetry parsing, OpenCode Zen client, goal store, task controller, System 0 execution (move, jump, dig, collect, place, flee, drop, equip, sleep, activate), control API boundaries, goal-to-action flow, attack fallback to `bot.nearestEntity`, and more.
 - Tests assert specific error codes: `DIG_TARGET_CHANGED`, `DIG_UNBREAKABLE`, `ACTION_TIMEOUT`, `DIG_FAILED`, `MISSING_PLUGIN`.
-- Runtime decision cycles are **single-flight**: 750ms cadence skips a new provider request while previous is pending.
+- Runtime decision cycles are **single-flight**: 750ms cadence skips a new provider request while previous is pending. The cycle now runs even when no human goal is set, using a default directive and full action set.
 - `chooseSurvivalAction()` in `survival_policy.ts` sequences escape → gather → farm → jump based on primitive state only.
 
 ## Important constraints
