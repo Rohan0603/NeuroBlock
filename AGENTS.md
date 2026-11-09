@@ -1,3 +1,18 @@
+# Current GitHub Chief/Worker development governance — NeuroBlock (2026-11-09)
+
+> **Current tracking/routing precedence:** GitHub development-issue policy below supersedes contradictory legacy tracking and automatic-agent-launch instructions later in this file. **Product-specific architecture, quality, validation, safety and security constraints remain binding.** Preserve System0/1/2 boundaries, TypeBox/Ajv, contract tests and runtime safety. Existing TODO.md becomes historical/engineering context, not a competing task queue after GitHub migration.
+
+- Use GitHub Issues and an authorized GitHub Projects v2 board as the intended development work source. This PR does **not** configure/verify Project membership, Status, Priority, milestone, or native dependencies; report these as **NOT VERIFIED**, never infer implementation readiness.
+- Primary route: exactly one `chief` or `worker`; `human` only with `chief`. `metadata-bootstrap` + `worker` allows **metadata operations only**, not implementation. Chief decides Project/Priority/requirements and reviews.
+- Every first handoff includes `GITHUB METADATA SETUP`; missing authorized Project access triggers a bounded `METADATA BOOTSTRAP HANDOFF`, performed by separately owner-invoked Worker with read-back and return to Chief. Implement only after separate Chief DoR and verified Project `Ready`.
+- **No automatic AI-agent invocation** from GitHub labels, issue events, Actions, or legacy orchestration rules. The human chooses and manually/schedules Chief and Worker runs in the desired tool. This policy does not disable the product's own runtime automation.
+- Complete approved protocol: `docs/GITHUB_AGENT_GOVERNANCE.md`; all legacy conflicting task-routing instructions below are historical. Preserve source/testing/documentation constraints in the remainder.
+- Default branch: `main`. This PR changes no application code, branch protections, secrets, Project fields, or existing CI.
+
+---
+
+## Preserved NeuroBlock product-specific agent instructions
+
 # Agent Operating Instructions — NeuroBlock
 
 ## Required agent skills
